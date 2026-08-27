@@ -5,16 +5,18 @@
 
 A lightweight WebExtension that adds an **İndir / Download** button to videos on X and Instagram and, when possible, lets you choose from the detected video quality variants.
 
-## v1.3.0
+## v1.3.1
 
-v1.3.0 focuses on Instagram interaction fixes and cross-browser compatibility.
+v1.3.1 is a focused hotfix for the download regression introduced in v1.3.0.
 
-- Fixed the visible-but-not-clickable download button on `instagram.com/reels`.
-- Fixed the same click conflict on Instagram Home/feed posts where Instagram's profile/post overlay could sit on top of the extension button.
-- The Instagram control now uses an independent top-level **overlay portal** instead of being inserted inside Instagram's clickable DOM.
-- Added periodic position syncing for Instagram's virtualized Reels/feed interface.
-- Moved extension API usage to a cross-browser `browser` / `chrome` compatibility layer.
-- Added Manifest V3 background fallback for Chromium, Firefox, and Safari-style WebExtension environments.
+- Fixed X / Twitter downloads not starting after selecting a quality.
+- Fixed Instagram downloads not starting after selecting a quality.
+- Fixed an internal JavaScript variable-name collision in `background.js`.
+- Separated the WebExtensions API object (`browserApi`) from the downloaded file extension (`fileExtension`).
+- Added an explicit downloads-API availability check.
+- Added clearer background download error logging for easier debugging.
+- Kept all v1.3.0 Instagram click fixes, quality selection, and cross-browser support.
+
 
 ## Features
 

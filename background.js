@@ -1,4 +1,4 @@
-const ext = globalThis.browser ?? globalThis.chrome;
+const browserApi = globalThis.browser ?? globalThis.chrome;
 
 const tabMedia = new Map();
 
@@ -350,7 +350,7 @@ async function downloadSelected(tabId, payload) {
 
   const { width, height } = getResolution(item);
   const quality = width && height ? `${width}x${height}` : qualityLabel(item);
-  const ext = /\.webm(?:\?|$)/i.test(url) ? "webm" : "mp4";
+  const fileExtension = /\.webm(?:\?|$)/i.test(url) ? "webm" : "mp4";
 
   const username = sanitizePart(payload.username, payload.platform === "instagram" ? "instagram" : "x_user");
   const id = sanitizePart(
@@ -366,9 +366,17 @@ async function downloadSelected(tabId, payload) {
     ? "Instagram-Videos"
     : "X-Videos";
 
-  const filename = `${folder}/${username}_${id}${qualityPart}.${ext}`;
+  const filename = `${folder}/${username}_${id}${qualityPart}.${fileExtension}`;
 
   try {
+    if (!browserApi?.downloads?.download) {
+      return {
+        ok: false,
+        code: "DOWNLOAD_API_UNAVAILABLE",
+        message: "Tarayıcının indirme API'sine erişilemiyor. Eklentiyi yeniden yükleyip tekrar deneyin."
+      };
+    }
+
     const options = {
       url,
       filename,
@@ -379,12 +387,12 @@ async function downloadSelected(tabId, payload) {
     // that implement a smaller subset of the downloads API.
     let downloadId;
     try {
-      downloadId = await ext.downloads.download({
+      downloadId = await browserApi.downloads.download({
         ...options,
         conflictAction: "uniquify"
       });
     } catch (firstError) {
-      downloadId = await ext.downloads.download(options);
+      downloadId = await browserApi.downloads.download(options);
     }
 
     return {
@@ -394,6 +402,8 @@ async function downloadSelected(tabId, payload) {
       quality
     };
   } catch (error) {
+    console.error("[Personal Video Downloader] Download failed:", error);
+
     return {
       ok: false,
       code: "DOWNLOAD_FAILED",
@@ -402,7 +412,7 @@ async function downloadSelected(tabId, payload) {
   }
 }
 
-ext.webRequest.onBeforeRequest.addListener(
+browserApi.webRequest.onBeforeRequest.addListener(
   (details) => {
     if (details.tabId < 0) return;
 
@@ -453,7 +463,7 @@ ext.webRequest.onBeforeRequest.addListener(
   }
 );
 
-ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
+browserApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const tabId = sender.tab?.id;
 
   if (message?.type === "CACHE_VARIANTS") {
@@ -497,6 +507,6 @@ ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-ext.tabs?.onRemoved?.addListener((tabId) => {
+browserApi.tabs?.onRemoved?.addListener((tabId) => {
   tabMedia.delete(tabId);
 });

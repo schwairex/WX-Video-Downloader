@@ -1,5 +1,5 @@
 (() => {
-  const ext = globalThis.browser ?? globalThis.chrome;
+  const browserApi = globalThis.browser ?? globalThis.chrome;
 
   const POST_SOURCE = "personal-social-video-downloader";
   const BUTTON_CLASS = "pvd-overlay-button";
@@ -8,6 +8,14 @@
 
   const overlayEntries = new Map();
   let updateQueued = false;
+
+  async function sendExtensionMessage(message) {
+    if (!browserApi?.runtime?.sendMessage) {
+      throw new Error("Eklenti arka plan servisine erişilemiyor.");
+    }
+
+    return await browserApi.runtime.sendMessage(message);
+  }
 
   function platform() {
     return location.hostname.includes("instagram.com") ? "instagram" : "x";
@@ -280,7 +288,7 @@
     setButtonState(button, "loading");
 
     try {
-      const response = await ext.runtime.sendMessage({
+      const response = await sendExtensionMessage({
         type: "DOWNLOAD_SELECTED",
         ...data,
         selectedUrl: variant.url
@@ -363,7 +371,7 @@
     setButtonState(button, "loading");
 
     try {
-      const response = await ext.runtime.sendMessage({
+      const response = await sendExtensionMessage({
         type: "GET_VARIANTS",
         ...data
       });
@@ -520,7 +528,7 @@
     if (!Array.isArray(event.data.variants) || !event.data.variants.length) return;
 
     Promise.resolve(
-      ext.runtime.sendMessage({
+      sendExtensionMessage({
         type: "CACHE_VARIANTS",
         variants: event.data.variants
       })
