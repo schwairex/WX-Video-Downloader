@@ -59,9 +59,6 @@ function canonicalizeInstagramUrl(url = "") {
     for (const key of [
       "bytestart",
       "byteend",
-      "start",
-      "end",
-      "range",
       "start_offset",
       "end_offset"
     ]) {
@@ -746,6 +743,7 @@ async function notify(title, message) {
 }
 
 
+
 function sameMediaFamily(candidate, payload, selectedItem) {
   if (!candidate || candidate.platform !== payload.platform) return false;
 
@@ -773,111 +771,196 @@ function sameMediaFamily(candidate, payload, selectedItem) {
       return String(candidate.postKey) === String(payload.postKey);
     }
 
-    // Feed items do not always expose a shortcode immediately. Do not fall
-    // back to an unrelated recently-seen Instagram post in that situation.
     return candidate.url === selectedItem.url;
   }
 
   return false;
 }
 
-async function startBrowserDownload(url, filename) {
+function makeDownloadToken(payload) {
+  return String(
+    payload.downloadToken ||
+    `pvd_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+  );
+}
+
+async function sendDownloadStatus(tabId, status) {
+  if (!Number.isInteger(tabId) || !browserApi?.tabs?.sendMessage) return;
+
+  try {
+    await browserApi.tabs.sendMessage(tabId, {
+      type: "PVD_DOWNLOAD_STATUS",
+      ...status
+    });
+  } catch (_) {
+    // The native browser download continues even if the page was navigated
+    // away from or its old content script was replaced.
+  }
+}
+
+function sourceConfidence(item) {
+  const source = String(item?.source || "");
+
+  if (source === "video_versions") return 500;
+  if (source === "video_url") return 460;
+  if (source === "api") return 440;
+  if (source === "api-string") return 400;
+  if (source === "dom") return 360;
+  if (source === "resource") return 260;
+  if (source === "network") return 220;
+
+  return Number(item?.sourcePriority || 0);
+}
+
+function orderDownloadCandidates(candidates, payload, selectedItem) {
+  const selectedResolution = resolution(selectedItem);
+  const selectedPixels =
+    selectedResolution.width * selectedResolution.height;
+
+  return [...candidates].sort((a, b) => {
+    if (payload.platform === "x") {
+      // On X, the exact bitrate/quality URL selected by the user should win.
+      if (a.url === selectedItem.url) return -1;
+      if (b.url === selectedItem.url) return 1;
+    }
+
+    // On Instagram, progressive API/Relay URLs are more reliable than a
+    // player-observed request. Prefer those first, while still trying to keep
+    // the selected resolution.
+    const confidenceDelta =
+      sourceConfidence(b) - sourceConfidence(a);
+
+    if (confidenceDelta) return confidenceDelta;
+
+    const ar = resolution(a);
+    const br = resolution(b);
+
+    const aPixels = ar.width * ar.height;
+    const bPixels = br.width * br.height;
+
+    const aDistance =
+      selectedPixels && aPixels
+        ? Math.abs(aPixels - selectedPixels)
+        : Number.MAX_SAFE_INTEGER;
+
+    const bDistance =
+      selectedPixels && bPixels
+        ? Math.abs(bPixels - selectedPixels)
+        : Number.MAX_SAFE_INTEGER;
+
+    return (
+      aDistance - bDistance ||
+      candidateScore(b) - candidateScore(a)
+    );
+  });
+}
+
+function buildCandidateFilename(candidate, payload, requestedMediaType) {
+  const finalUrl = normalizeUrl(candidate.url, payload.platform);
+  const { width, height } = resolution(candidate);
+
+  const quality =
+    width && height
+      ? `${width}x${height}`
+      : qualityLabel(candidate);
+
+  const fallbackExtension =
+    requestedMediaType === "image"
+      ? "jpg"
+      : /\.webm(?:\?|$)/i.test(finalUrl)
+        ? "webm"
+        : "mp4";
+
+  const fileExtension = extensionFromContentType(
+    candidate.contentType || "",
+    fallbackExtension
+  );
+
+  const username = sanitize(
+    payload.username,
+    payload.platform === "instagram"
+      ? "instagram"
+      : "x_user"
+  );
+
+  const fallbackId =
+    payload.contentKind === "story"
+      ? `story_${Date.now()}`
+      : `media_${Date.now()}`;
+
+  const id = sanitize(
+    payload.platform === "instagram"
+      ? payload.postKey
+      : payload.tweetId,
+    fallbackId
+  );
+
+  const dimensions =
+    width && height
+      ? `_${width}x${height}`
+      : "";
+
+  let folder =
+    payload.platform === "instagram"
+      ? "Instagram-Videos"
+      : "X-Videos";
+
+  if (
+    payload.platform === "instagram" &&
+    payload.contentKind === "story"
+  ) {
+    folder =
+      requestedMediaType === "image"
+        ? "Instagram-Stories/Images"
+        : "Instagram-Stories/Videos";
+  }
+
+  return {
+    url: finalUrl,
+    filename:
+      `${folder}/${username}_${id}${dimensions}.${fileExtension}`,
+    quality
+  };
+}
+
+async function startNativeDownload(url, filename) {
   if (!browserApi?.downloads?.download) {
     throw new Error("Tarayıcının indirme API'si kullanılamıyor.");
   }
 
-  const baseOptions = {
+  // saveAs:true intentionally asks the browser to open its native file chooser
+  // immediately. This avoids waiting for remote media probing before the user
+  // gets the save UI.
+  const options = {
     url,
     filename,
-    saveAs: false
+    saveAs: true
   };
 
   try {
     return await browserApi.downloads.download({
-      ...baseOptions,
+      ...options,
       conflictAction: "uniquify"
     });
   } catch (error) {
-    // Some WebExtension implementations expose downloads.download but not
-    // every Chromium option. Retry once with the smallest portable payload.
-    const text = String(error?.message || error || "");
-
-    if (
-      /conflictAction|unexpected property|invalid value|not supported/i.test(text)
-    ) {
-      return await browserApi.downloads.download(baseOptions);
+    // Portable fallback for WebExtension implementations with a smaller
+    // DownloadOptions surface.
+    try {
+      return await browserApi.downloads.download(options);
+    } catch (_) {
+      throw error;
     }
-
-    throw error;
   }
 }
 
-function isDefinitiveInvalidMedia(validation) {
-  return Boolean(
-    validation &&
-    validation.ok === false &&
-    [
-      "INVALID_IMAGE_SOURCE",
-      "INVALID_VIDEO_SOURCE"
-    ].includes(validation.code)
-  );
-}
-
-async function cancelInvalidDownload(downloadId, validation) {
-  if (!Number.isInteger(downloadId)) return;
-
-  try {
-    await browserApi.downloads.cancel(downloadId);
-  } catch (_) {}
-
-  try {
-    await browserApi.downloads.erase({ id: downloadId });
-  } catch (_) {}
-
-  await notify(
-    "Geçersiz medya engellendi",
-    validation?.message ||
-      "Instagram geçerli bir medya dosyası döndürmedi."
-  );
-}
-
-function validateInstagramDownloadInBackground(downloadIdPromise, url, mediaType) {
-  // The validation request intentionally does NOT block downloads.download().
-  // This makes the browser's save/open flow start immediately.
-  const validationPromise = validateRemoteMedia(url, mediaType)
-    .catch(() => null);
-
-  void Promise.allSettled([
-    Promise.resolve(downloadIdPromise),
-    validationPromise
-  ]).then(async ([downloadResult, validationResult]) => {
-    if (
-      downloadResult.status !== "fulfilled" ||
-      validationResult.status !== "fulfilled"
-    ) {
-      return;
-    }
-
-    const validation = validationResult.value;
-
-    // Network/CORS/timeouts are not enough evidence to cancel a download.
-    // Only a definitive "this is not media" signature result is destructive.
-    if (isDefinitiveInvalidMedia(validation)) {
-      await cancelInvalidDownload(downloadResult.value, validation);
-    }
-  });
-}
-
-async function downloadSelected(tabId, payload) {
+function prepareSelectedDownload(tabId, payload) {
   const selectedUrl = normalizeUrl(
     payload.selectedUrl || "",
     payload.platform
   );
 
   const requestedMediaType =
-    payload.mediaType === "image"
-      ? "image"
-      : "video";
+    payload.mediaType === "image" ? "image" : "video";
 
   if (!selectedUrl || !isAllowedMediaUrl(selectedUrl)) {
     return {
@@ -887,11 +970,9 @@ async function downloadSelected(tabId, payload) {
     };
   }
 
-  // v1.5.0 critical path: never wait for storage hydration before opening the
-  // browser download flow. The exact selected variant is sent by content.js.
   const selectedVariant =
     payload.selectedVariant &&
-    payload.selectedVariant.url === payload.selectedUrl
+    normalizeUrl(payload.selectedVariant.url || "", payload.platform) === selectedUrl
       ? payload.selectedVariant
       : {};
 
@@ -911,9 +992,9 @@ async function downloadSelected(tabId, payload) {
       mediaType: requestedMediaType,
       source:
         selectedVariant.source ||
-        "selected",
+        "ui-selected",
       sourcePriority:
-        Number(selectedVariant.sourcePriority || 95)
+        Number(selectedVariant.sourcePriority || 100)
     });
 
   if (!selectedItem) {
@@ -946,11 +1027,7 @@ async function downloadSelected(tabId, payload) {
     };
   }
 
-  const selectedResolution = resolution(selectedItem);
-
-  // Exact source first. Alternates are restricted to the same post/media
-  // family and are only used if the browser rejects the first download call.
-  const familyAlternates = memoryStore
+  const sameFamily = memoryStore
     .filter((candidate) =>
       sameMediaFamily(candidate, payload, selectedItem)
     )
@@ -958,138 +1035,93 @@ async function downloadSelected(tabId, payload) {
       requestedMediaType === "image"
         ? isImageCandidate(candidate)
         : isVideoCandidate(candidate)
-    )
-    .sort((a, b) => {
-      const ar = resolution(a);
-      const br = resolution(b);
-
-      const selectedPixels =
-        selectedResolution.width * selectedResolution.height;
-
-      const aDistance =
-        selectedPixels && ar.width && ar.height
-          ? Math.abs(ar.width * ar.height - selectedPixels)
-          : Number.MAX_SAFE_INTEGER;
-
-      const bDistance =
-        selectedPixels && br.width && br.height
-          ? Math.abs(br.width * br.height - selectedPixels)
-          : Number.MAX_SAFE_INTEGER;
-
-      return (
-        aDistance - bDistance ||
-        candidateScore(b) - candidateScore(a)
-      );
-    });
+    );
 
   const candidateMap = new Map();
-  for (const candidate of [selectedItem, ...familyAlternates]) {
+
+  for (const candidate of [selectedItem, ...sameFamily]) {
     if (!candidate?.url) continue;
-    const normalized = normalizeUrl(candidate.url, payload.platform);
-    if (!candidateMap.has(normalized)) {
-      candidateMap.set(normalized, {
+
+    const normalizedUrl =
+      normalizeUrl(candidate.url, payload.platform);
+
+    const existing = candidateMap.get(normalizedUrl);
+
+    if (
+      !existing ||
+      sourceConfidence(candidate) > sourceConfidence(existing)
+    ) {
+      candidateMap.set(normalizedUrl, {
         ...candidate,
-        url: normalized
+        url: normalizedUrl
       });
     }
   }
 
-  const candidates = [...candidateMap.values()].slice(0, 4);
+  const candidates = orderDownloadCandidates(
+    [...candidateMap.values()],
+    payload,
+    selectedItem
+  ).slice(0, 5);
 
-  const username = sanitize(
-    payload.username,
-    payload.platform === "instagram"
-      ? "instagram"
-      : "x_user"
-  );
+  if (!candidates.length) {
+    return {
+      ok: false,
+      code: "NO_CANDIDATE",
+      message: "İndirilebilir medya kaynağı bulunamadı."
+    };
+  }
 
-  const fallbackId =
-    payload.contentKind === "story"
-      ? `story_${Date.now()}`
-      : `media_${Date.now()}`;
+  return {
+    ok: true,
+    requestedMediaType,
+    candidates
+  };
+}
 
-  const id = sanitize(
-    payload.platform === "instagram"
-      ? payload.postKey
-      : payload.tweetId,
-    fallbackId
-  );
+async function runQueuedDownload(tabId, payload, token) {
+  const prepared = prepareSelectedDownload(tabId, payload);
+
+  if (!prepared.ok) {
+    await sendDownloadStatus(tabId, {
+      token,
+      status: "error",
+      message: prepared.message
+    });
+
+    return;
+  }
 
   let lastError = null;
 
-  for (const candidate of candidates) {
-    const finalUrl = normalizeUrl(candidate.url, payload.platform);
-    const { width, height } = resolution(candidate);
-
-    const quality =
-      width && height
-        ? `${width}x${height}`
-        : qualityLabel(candidate);
-
-    const fallbackExtension =
-      requestedMediaType === "image"
-        ? "jpg"
-        : /\.webm(?:\?|$)/i.test(finalUrl)
-          ? "webm"
-          : "mp4";
-
-    const fileExtension = extensionFromContentType(
-      candidate.contentType || "",
-      fallbackExtension
+  for (const candidate of prepared.candidates) {
+    const target = buildCandidateFilename(
+      candidate,
+      payload,
+      prepared.requestedMediaType
     );
 
-    const dimensions =
-      width && height
-        ? `_${width}x${height}`
-        : "";
-
-    let folder =
-      payload.platform === "instagram"
-        ? "Instagram-Videos"
-        : "X-Videos";
-
-    if (
-      payload.platform === "instagram" &&
-      payload.contentKind === "story"
-    ) {
-      folder =
-        requestedMediaType === "image"
-          ? "Instagram-Stories/Images"
-          : "Instagram-Stories/Videos";
-    }
-
-    const filename =
-      `${folder}/${username}_${id}${dimensions}.${fileExtension}`;
-
     try {
-      // Call downloads.download immediately. This is the important v1.5.0
-      // change: Instagram validation no longer sits in front of the save flow.
-      const downloadIdPromise =
-        startBrowserDownload(finalUrl, filename);
+      const downloadId = await startNativeDownload(
+        target.url,
+        target.filename
+      );
 
-      if (payload.platform === "instagram") {
-        validateInstagramDownloadInBackground(
-          downloadIdPromise,
-          finalUrl,
-          requestedMediaType
-        );
-      }
-
-      const downloadId = await downloadIdPromise;
-
-      return {
-        ok: true,
+      await sendDownloadStatus(tabId, {
+        token,
+        status: "started",
         downloadId,
-        filename,
-        quality,
-        mediaType: requestedMediaType,
-        source:
-          candidate.source || "unknown"
-      };
+        filename: target.filename,
+        quality: target.quality,
+        mediaType: prepared.requestedMediaType
+      });
+
+      return;
     } catch (error) {
       lastError = error;
+
       console.warn(
-        "[PVD] candidate download failed; trying safe alternate",
+        "[PVD] download candidate rejected",
         candidate.source,
         error
       );
@@ -1098,17 +1130,39 @@ async function downloadSelected(tabId, payload) {
 
   const message =
     lastError?.message ||
-    "İndirme başlatılamadı.";
+    "Tarayıcı indirmeyi başlatamadı.";
+
+  await sendDownloadStatus(tabId, {
+    token,
+    status: "error",
+    message
+  });
 
   await notify(
     "İndirme başlatılamadı",
     message
   );
+}
+
+function queueSelectedDownload(tabId, payload) {
+  const prepared = prepareSelectedDownload(tabId, payload);
+
+  if (!prepared.ok) {
+    return prepared;
+  }
+
+  const token = makeDownloadToken(payload);
+
+  // Fire-and-forget by design. The native file chooser is triggered by
+  // startNativeDownload; the content script does not wait for the chooser to
+  // close before regaining control.
+  void runQueuedDownload(tabId, payload, token);
 
   return {
-    ok: false,
-    code: "DOWNLOAD_FAILED",
-    message
+    ok: true,
+    queued: true,
+    token,
+    message: "İndirme penceresi açılıyor."
   };
 }
 
@@ -1388,7 +1442,7 @@ async function dispatchRuntimeRequest(message, tabId) {
       };
     }
 
-    return await downloadSelected(tabId, message);
+    return queueSelectedDownload(tabId, message);
   }
 
   if (message?.type === "EXTRACT_AUDIO") {
@@ -1469,7 +1523,7 @@ browserApi.runtime.onMessage.addListener(
 // using a Port plus retry logic avoids transient "Receiving end does not exist"
 // failures seen with one-shot messages.
 browserApi.runtime.onConnect.addListener((port) => {
-  if (port.name !== "pvd-control-v150") return;
+  if (port.name !== "pvd-control-v151") return;
 
   port.onMessage.addListener((packet) => {
     if (

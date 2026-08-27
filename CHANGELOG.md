@@ -1,5 +1,65 @@
 # Changelog
 
+## [1.5.1] - 2026-08-27
+
+### Fixed — X / Twitter Downloads
+- Fixed cases where selecting **1080p / 720p / 480p / 320p** could appear to do nothing.
+- Fixed excessive waiting after selecting an X / Twitter quality.
+- Removed the long-lived runtime Port from the normal critical download path.
+- Restored `runtime.sendMessage()` as the primary download-request transport.
+- The Port transport remains available only as a compatibility fallback.
+- The exact X / Twitter quality URL selected by the user is attempted first.
+- The content UI no longer waits for the native file chooser to close before returning to an idle state.
+
+### Fixed — Instagram Downloads
+- Rebuilt the Instagram quality → download flow for lower latency and more predictable behavior.
+- The browser's native **Save As** dialog is now explicitly requested with `saveAs: true`.
+- Selected downloads are queued immediately and acknowledged back to the page without waiting for the OS file picker to close.
+- Download success and failure are now delivered asynchronously through a dedicated `PVD_DOWNLOAD_STATUS` message.
+- Removed destructive parallel media validation from the active download path.
+- Network/CORS/media-probe behavior no longer cancels a valid Instagram browser download.
+- Progressive Instagram API sources (`video_versions` / `video_url`) are preferred over lower-confidence player/network observations.
+- Fallback candidates are restricted to the same Instagram post/media family.
+- Preserved the selected resolution when choosing a safer Instagram source.
+- Stopped removing generic `start`, `end`, and `range` parameters from Instagram CDN URLs.
+- Only known playback byte-slice parameters such as `bytestart` and `byteend` are removed.
+- Added safe fallback to another same-post source if the browser rejects the first signed Instagram URL.
+
+### Messaging / Reliability
+- Added immediate queue acknowledgement for download requests.
+- Added unique download tokens for matching asynchronous download status back to the correct UI action.
+- Added background-to-content **download started / error** status messages.
+- Kept stale-extension-context recovery after extension updates.
+- Added short one-shot message retries for transient Manifest V3 wake-up races.
+- Kept reconnectable Port messaging as a secondary fallback instead of the primary path.
+
+### Native Download Behavior
+- Switched media downloads to explicit `saveAs: true` behavior.
+- The browser/OS file picker is now controlled directly by the browser Downloads API.
+- Download requests no longer wait on extra extension-side network probing before asking the browser to save the file.
+
+### Preserved
+- X / Twitter quality selection.
+- Instagram Feed, Post and Reels support.
+- Instagram Story video support.
+- Instagram Story image support.
+- Audio-only AAC/WAV export.
+- Already-authorized private-profile support.
+- Clipboard URL detection.
+- Native completion/error notifications.
+- Tracker-free / analytics-free architecture.
+- Cross-browser WebExtensions architecture.
+
+### Notes
+v1.5.1 is a focused reliability hotfix for the actual download action.
+
+The intended flow is now:
+
+**Choose quality → request is queued immediately → native Save As dialog → browser download**
+
+The in-page extension UI is no longer kept waiting for the Save As dialog to be
+closed.
+
 ## [1.5.0] - 2026-08-27
 
 ### Fixed — Instagram Download Stability

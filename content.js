@@ -240,7 +240,7 @@
     }
 
     const port = browserApi.runtime.connect({
-      name: "pvd-control-v150"
+      name: "pvd-control-v151"
     });
 
     port.onMessage.addListener((packet) => {
@@ -359,29 +359,9 @@
   async function send(message) {
     let lastError = null;
 
-    // Primary path: persistent Port. Retry with a freshly-created Port once.
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        return await sendViaPort(message);
-      } catch (error) {
-        lastError = error;
-        clearPort();
-
-        if (staleContextError(error)) {
-          autoRecoverStaleContext(error);
-          throw new Error("Eklenti güncellendi. Sayfa otomatik yenileniyor…");
-        }
-
-        if (!connectionError(error) && attempt === 0) {
-          break;
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, 40));
-      }
-    }
-
-    // Compatibility fallback: one-shot runtime message, also retried once for
-    // transient MV3 service-worker wake-up races.
+    // v1.5.1: the normal path is a one-shot runtime message. MV3 service
+    // workers are event-driven and sendMessage wakes the background listener
+    // directly. The Port remains only as a fallback.
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         return await sendViaOneShot(message);
@@ -395,7 +375,26 @@
 
         if (!connectionError(error)) break;
 
-        await new Promise((resolve) => setTimeout(resolve, 70));
+        await new Promise((resolve) =>
+          setTimeout(resolve, attempt === 0 ? 35 : 70)
+        );
+      }
+    }
+
+    // Fallback transport for unusual WebExtension/background environments.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await sendViaPort(message);
+      } catch (error) {
+        lastError = error;
+        clearPort();
+
+        if (staleContextError(error)) {
+          autoRecoverStaleContext(error);
+          throw new Error("Eklenti güncellendi. Sayfa otomatik yenileniyor…");
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 45));
       }
     }
 
@@ -1074,79 +1073,91 @@
     renderOptions(menu, element, button, refreshed);
   }
 
+  const pendingDownloads = new Map();
+
   async function download(
     element,
     button,
     variant
   ) {
     closeMenus();
-    button.dataset.state =
-      "loading";
+
+    if (button.dataset.state === "loading") {
+      return;
+    }
+
+    button.dataset.state = "loading";
+
+    const downloadToken =
+      `ui_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
     try {
-      const response =
-        await send({
-          type:
-            "DOWNLOAD_SELECTED",
-          ...requestData(element),
-          selectedUrl:
-            variant.url,
-          selectedVariant: {
-            url: variant.url,
-            width: Number(variant.width || 0),
-            height: Number(variant.height || 0),
-            bitrate: Number(variant.bitrate || 0),
-            mediaType:
-              variant.mediaType ||
-              mediaType(element),
-            source:
-              variant.source ||
-              "ui-selected",
-            sourcePriority:
-              Number(
-                variant.sourcePriority ||
-                (variant.source === "video_versions"
+      const response = await send({
+        type: "DOWNLOAD_SELECTED",
+        ...requestData(element),
+        selectedUrl: variant.url,
+        downloadToken,
+        selectedVariant: {
+          url: variant.url,
+          width: Number(variant.width || 0),
+          height: Number(variant.height || 0),
+          bitrate: Number(variant.bitrate || 0),
+          mediaType:
+            variant.mediaType ||
+            mediaType(element),
+          source:
+            variant.source ||
+            "ui-selected",
+          sourcePriority:
+            Number(
+              variant.sourcePriority ||
+              (
+                variant.source === "video_versions"
                   ? 120
                   : variant.source === "video_url"
                     ? 110
-                    : 95)
+                    : 95
               )
-          }
-        });
+            )
+        }
+      });
 
-      if (response?.ok) {
-        button.dataset.state =
-          "done";
-
-        toast(
-          response.mediaType ===
-            "image"
-            ? "Hikâye görseli indiriliyor"
-            : `İndirme başladı${response.quality ? ` • ${response.quality}` : ""}`,
-          "success"
-        );
-
-        setTimeout(
-          () =>
-            (button.dataset.state =
-              ""),
-          1500
-        );
-      } else {
+      if (!response?.ok) {
         button.dataset.state = "";
 
         toast(
           response?.message ||
-            "Medya indirilemedi.",
+            "İndirme başlatılamadı.",
           "error"
         );
+
+        return;
       }
+
+      const token =
+        response.token ||
+        downloadToken;
+
+      pendingDownloads.set(token, {
+        button,
+        createdAt: Date.now()
+      });
+
+      // The background has already queued the native browser download call.
+      // Do not keep the UI stuck in a spinner while the OS file picker is open.
+      button.dataset.state = "";
+
+      // Cleanup only. The actual success/error arrives through
+      // PVD_DOWNLOAD_STATUS.
+      setTimeout(() => {
+        pendingDownloads.delete(token);
+      }, 6 * 60 * 1000);
     } catch (error) {
       button.dataset.state = "";
 
       toast(
         error?.message ||
-          "Medya indirilemedi.",
+          "İndirme başlatılamadı.",
         "error"
       );
     }
@@ -1612,10 +1623,36 @@
 
   browserApi.runtime.onMessage.addListener(
     (message, sender, respond) => {
-      if (
-        message?.type !==
-        "OPEN_PRIMARY_MENU"
-      ) {
+      if (message?.type === "PVD_DOWNLOAD_STATUS") {
+        const pending =
+          pendingDownloads.get(message.token);
+
+        if (pending?.button) {
+          pending.button.dataset.state = "";
+        }
+
+        pendingDownloads.delete(message.token);
+
+        if (message.status === "started") {
+          toast(
+            message.mediaType === "image"
+              ? "Görsel indirme başlatıldı"
+              : `İndirme başlatıldı${message.quality ? ` • ${message.quality}` : ""}`,
+            "success"
+          );
+        } else if (message.status === "error") {
+          toast(
+            message.message ||
+              "Tarayıcı indirmeyi başlatamadı.",
+            "error"
+          );
+        }
+
+        respond?.({ ok: true });
+        return;
+      }
+
+      if (message?.type !== "OPEN_PRIMARY_MENU") {
         return;
       }
 

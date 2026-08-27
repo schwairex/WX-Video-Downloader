@@ -71,7 +71,8 @@
 }
 
 .pvd-overlay-button[data-state="loading"] {
-  opacity: 0.65;
+  opacity: 0.78;
+  cursor: progress !important;
 }
 
 .pvd-overlay-button[data-state="done"] {

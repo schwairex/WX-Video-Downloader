@@ -1,6 +1,6 @@
 {
   "name": "personal-social-video-downloader",
-  "version": "1.4.0",
+  "version": "1.5.1",
   "private": true,
   "description": "Personal tracker-free X and Instagram WebExtension.",
   "scripts": {

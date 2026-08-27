@@ -1,10 +1,10 @@
 <div align="center">
 
-# WX Video Downloader
+# Personal X & Instagram Video Downloader
 
 **A lightweight, privacy-focused WebExtension built for my own browser workflow.**
 
-![Version](https://img.shields.io/badge/version-1.5.0-45A8FF?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-1.5.1-45A8FF?style=for-the-badge)
 ![Manifest](https://img.shields.io/badge/Manifest-MV3-5C6CF1?style=for-the-badge&logo=googlechrome&logoColor=white)
 ![Privacy](https://img.shields.io/badge/Privacy-Tracker--Free-28C889?style=for-the-badge&logo=proton&logoColor=white)
 ![Project](https://img.shields.io/badge/Project-Personal-8B5CF6?style=for-the-badge)
@@ -36,53 +36,38 @@ The project is designed around four principles:
 - **Simple installation** — load the extension and use it; no npm/setup script is
   required for normal use.
 
-## What's new in v1.5.0?
+## What's new in v1.5.1?
 
-### Instagram download stability
+### Download flow rebuilt for reliability
 
-v1.5.0 separates Instagram's download path from slow pre-download validation.
+v1.5.1 simplifies the critical **quality → download** path again.
 
-When a quality is selected:
+- `runtime.sendMessage()` is the primary page-to-background transport.
+- The reconnectable Port remains only as a fallback.
+- A selected download receives an immediate queue acknowledgement.
+- The content UI no longer waits for the native file chooser to close.
+- The browser's own **Save As** dialog is requested explicitly with
+  `saveAs: true`.
+- Download success/error is reported back to the page asynchronously.
 
-1. the exact selected media variant is sent to the background context,
-2. the browser's `downloads.download()` call is started immediately,
-3. Instagram media validation runs in parallel instead of blocking the native save flow,
-4. only a definitive non-media signature can cancel an invalid download,
-5. transient validation/network failures no longer prevent a valid download from starting.
+### X / Twitter
 
-This removes the delay that could occur before the browser's native save dialog
-appeared.
+The exact quality URL selected by the user is attempted first. The extra
+messaging layer introduced in v1.5.0 is no longer on the normal critical path.
 
-### Resilient extension messaging
+### Instagram
 
-Instagram is a single-page application and aggressively replaces/recycles DOM
-content while navigating Feed, Reels and Stories.
+Instagram uses a separate reliability policy:
 
-v1.5.0 adds a reconnectable runtime Port between the in-page controls and the
-extension background context. If that channel is interrupted:
-
-- the extension reconnects automatically,
-- the request is retried,
-- a normal one-shot runtime message is used as a compatibility fallback,
-- stale extension contexts after an update trigger one controlled page reload.
-
-This specifically targets intermittent errors such as:
-
-```text
-Could not establish connection. Receiving end does not exist.
-```
-
-### Cleaner UI
-
-The floating button and quality menu were simplified:
-
-- neutral dark surface,
-- reduced gradients and glow,
-- smaller typography,
-- tighter spacing,
-- softer borders,
-- simpler hover states,
-- less visual noise.
+- progressive `video_versions` / `video_url` sources are preferred over raw
+  player-observed requests,
+- the selected resolution is preserved where possible,
+- only fallbacks from the same Instagram post/media family are considered,
+- generic `start`, `end`, and `range` query parameters are no longer stripped
+  from signed CDN URLs,
+- only known `bytestart` / `byteend` playback-slice hints are removed,
+- pre-download fetch validation does not delay or cancel the normal browser
+  save flow.
 
 
 ## Features
