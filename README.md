@@ -1,56 +1,160 @@
-# X Video Downloader - Personal (Brave)
+# Personal X & Instagram Video Downloader
 
-Kişisel kullanım için hazırlanmış Manifest V3 Brave/Chromium eklentisi.
+> **Personal project / kişisel kullanım projesi.**  
+> Bu depo benim Brave tarayıcımda kullanmak ve tarayıcı eklentisi geliştirmeyi öğrenmek için hazırladığım küçük bir kişisel projedir. Ticari bir ürün, resmi istemci veya X / Instagram hizmeti değildir.
 
-## Ne yapar?
+Brave üzerinde X (Twitter) ve Instagram videolarının üzerine küçük bir **İndir** düğmesi ekleyen, mümkün olduğunda mevcut video kalite seçeneklerini gösteren Manifest V3 tarayıcı eklentisi.
 
-- x.com ve twitter.com üzerindeki video içeren gönderilere indirme düğmesi ekler.
-- X'in sayfa içi GraphQL cevaplarındaki `video.twimg.com` video varyantlarını yerel olarak yakalar.
-- Bulunan doğrudan MP4/WebM seçenekleri arasında en yüksek çözünürlüklüyü tercih eder.
-- Brave'in `chrome.downloads` API'si ile dosyayı otomatik olarak `İndirilenler/X-Videos/` klasörüne kaydeder.
-- Herhangi bir harici sunucuya veri göndermez.
+## Neden yaptım?
 
-## Brave'e kurulum
+X ve Instagram'da kendi tarayıcı kullanımım sırasında, indirme hakkına sahip olduğum videoları ayrı bir siteye veya üçüncü taraf indirme servisine göndermeden daha pratik şekilde kaydetmek istedim.
 
-1. ZIP'i bir klasöre çıkart.
-2. Brave adres çubuğuna `brave://extensions` yaz.
-3. Sağ üstten **Geliştirici modu**nu aç.
-4. **Paketlenmemiş öğe yükle / Load unpacked** seçeneğine bas.
-5. Bu klasörü seç: `x-video-downloader-brave`
-6. x.com sayfasını yenile.
+Projenin temel hedefleri:
+
+- kişisel kullanım,
+- basit ve temiz arayüz,
+- üçüncü taraf indirme sitesi kullanmamak,
+- mümkün olduğunca işlemleri tarayıcı içinde yapmak,
+- Brave / Chromium Manifest V3 yapısını öğrenmek.
+
+## Özellikler
+
+### X / Twitter
+
+- Video bulunan tweetlerde videonun sağ üst tarafında modern indirme düğmesi.
+- İndir düğmesine basınca küçük kalite menüsü.
+- Yakalanabilen MP4/WebM seçenekleri arasından çözünürlük seçimi.
+- En yüksek kaliteyi menüde **EN İYİ** etiketiyle gösterme.
+- X'in `video.twimg.com` medya isteklerini ve sayfa içi video varyantlarını yerel olarak yakalama.
+- Dosyaları `Downloads/X-Videos/` altında saklama.
+
+### Instagram
+
+- Video gönderileri ve Reels üzerinde indirme düğmesi.
+- İndir düğmesine basınca mevcut kalite seçeneklerini gösterme.
+- Instagram'ın doğrudan video URL'lerini DOM'daki `blob:` adresine güvenmeden, sayfa/API yanıtlarındaki video verilerinden yakalamaya çalışma.
+- `video_versions` / `video_url` gibi mevcut medya verilerinden progressive MP4 kaynaklarını kullanma.
+- Dosyaları `Downloads/Instagram-Videos/` altında saklama.
+
+## Gizlilik yaklaşımı
+
+Bu proje için özellikle basit bir yaklaşım tercih ettim:
+
+- Kendi indirme sunucum yok.
+- Üçüncü taraf video indirme API'si kullanılmıyor.
+- Analitik veya takip kodu yok.
+- Yakalanan medya URL'leri uzantının belleğinde geçici olarak tutuluyor.
+- İndirme Brave/Chromium'un kendi `downloads` API'si ile başlatılıyor.
+
+Eklenti yalnızca gerekli platform ve medya alan adları için izin ister.
+
+## Kurulum — Brave
+
+Bu proje mağaza üzerinden dağıtılan bir eklenti değil. Kişisel olarak **unpacked extension** şeklinde kullanıyorum.
+
+1. Repoyu indir veya klonla.
+2. Brave'de şu adresi aç:
+   `brave://extensions`
+3. Sağ üstten **Developer mode / Geliştirici modu** seçeneğini aç.
+4. **Load unpacked / Paketlenmemiş öğe yükle** seçeneğine bas.
+5. Bu deponun kök klasörünü seç.
+6. Açık X ve Instagram sekmelerini yenile.
 
 ## Kullanım
 
-1. X'te video bulunan bir gönderi aç.
-2. Tweet aksiyonlarının yanında indirme ikonunu göreceksin.
-3. Bir kez tıkla.
-4. Eklenti yakalanan MP4 varyantları içinden en yüksek çözünürlüklü olanı indirir.
+### X
 
-## Eğer "video kaynağı henüz yakalanmadı" mesajı çıkarsa
+1. Video içeren bir tweet aç.
+2. Videonun sağ üstündeki **İndir** düğmesine bas.
+3. Açılan kalite menüsünden istediğin çözünürlüğü seç.
+4. Video `Downloads/X-Videos/` klasörüne kaydedilir.
 
-Videoyu 1-2 saniye oynat ve indirme düğmesine tekrar bas. X bazı gönderilerde video kaynaklarını ancak oynatma başlayınca yüklüyor.
+### Instagram
 
-## Teknik not
+1. Bir video gönderisi veya Reel aç.
+2. Videonun üzerindeki **İndir** düğmesine bas.
+3. Yakalanabilen kalite seçeneklerinden birini seç.
+4. Video `Downloads/Instagram-Videos/` klasörüne kaydedilir.
 
-X bazı videolarda HLS (`.m3u8`) ve bazı videolarda doğrudan MP4 kaynakları sunabiliyor. Bu sürüm tarayıcı içinde ek dönüştürücü/FFmpeg taşımamak için doğrudan MP4/WebM varyantını tercih eder. Yalnızca HLS yakalanan özel durumlarda kullanıcıdan videoyu oynatıp tekrar denemesini ister.
+Instagram veya X medya kaynağını henüz yüklememişse videoyu birkaç saniye oynatıp tekrar denemek gerekebilir.
 
-## Dosyalar
+## Proje yapısı
 
-- `manifest.json` — Manifest V3 tanımı
-- `background.js` — video URL önbelleği ve indirme işlemi
-- `page-hook.js` — X'in ağ/GraphQL cevaplarından video varyantlarını yakalar
-- `content.js` — tweetlere indirme düğmesi ekler
-- `content.css` — düğme ve bildirim görünümü
+```text
+personal-social-video-downloader/
+├── manifest.json
+├── background.js
+├── page-hook.js
+├── content.js
+├── content.css
+├── README.md
+└── .gitignore
+```
 
-## Gizlilik
+### `manifest.json`
 
-Eklenti X/Twitter ve `video.twimg.com` alan adlarında çalışır. Yakalanan medya URL'leri yalnızca tarayıcı belleğinde geçici olarak tutulur; harici bir API veya sunucu kullanılmaz.
+Manifest V3 ayarları, platform izinleri ve content script tanımları.
 
-Yalnızca indirme hakkına/iznine sahip olduğun içeriklerde kullan.
+### `page-hook.js`
 
-## v1.1.0 görünüm güncellemesi
+Sayfanın kendi JavaScript ortamında çalışır. X ve Instagram'ın video bilgilerini taşıyan fetch/XHR yanıtlarını ve medya kaynaklarını gözlemlemeye çalışır.
 
-Bu sürümde indirme düğmesi tweet altındaki aksiyon barından alınarak doğrudan video alanının sağ üst köşesine taşındı. Böylece:
-- daha görünür oldu,
-- tıklaması kolaylaştı,
-- daha estetik "floating pill" görünümüne kavuştu.
+### `content.js`
+
+Sayfadaki video alanlarını bulur, indirme düğmesini ve kalite menüsünü ekler.
+
+### `background.js`
+
+Yakalanan video varyantlarını sekme bazında geçici olarak tutar, kalite listesini hazırlar ve indirmeyi başlatır.
+
+### `content.css`
+
+Floating indirme butonu, kalite menüsü ve bildirimlerin görünümü.
+
+## Teknik notlar
+
+Bu proje platformların resmi bir indirme API'sini kullanmıyor. X ve Instagram'ın web arayüzünde zaten tarayıcıya gönderilen medya verilerini yerel olarak gözlemlemeye dayanıyor.
+
+Bu nedenle platformların web arayüzleri değiştiğinde belirli özellikler zaman zaman bozulabilir. Özellikle Instagram ön yüzü ve medya sunumu sık değişebildiği için proje **best-effort** mantığıyla çalışır.
+
+Manifest V3 content script yapısında sayfanın kendi `fetch` / XHR akışını gözlemleyebilmek için `page-hook.js` `MAIN` world'de çalışır. UI ve extension mesajlaşma tarafı ayrı content script içinde tutulur.
+
+## Kapsam
+
+Şu anki kişisel kullanım odağı:
+
+- X videoları
+- Instagram video postları
+- Instagram Reels
+
+Şu anda özellikle hedeflenmeyenler:
+
+- toplu profil indirme,
+- Instagram Story arşivleme,
+- resim/carousel toplu indirme,
+- DRM veya korumalı medya aşma,
+- platform erişim kontrollerini atlatma.
+
+## Sorumlu kullanım
+
+Bu eklentiyi yalnızca indirme, saklama veya kullanma hakkına sahip olduğun içeriklerde kullan.
+
+İçeriğin platformda görüntülenebiliyor olması, onu yeniden dağıtma veya başka amaçlarla kullanma hakkı verdiği anlamına gelmez. İçerik sahibinin hakları ve ilgili platform kuralları kullanıcı tarafından dikkate alınmalıdır.
+
+## Bağlılık / marka açıklaması
+
+Bu proje:
+
+- X Corp. ile bağlantılı değildir,
+- Meta Platforms, Inc. veya Instagram ile bağlantılı değildir,
+- bu şirketler tarafından onaylanmış veya desteklenmiş değildir.
+
+X, Twitter, Instagram ve ilgili marka adları kendi hak sahiplerine aittir.
+
+## Durum
+
+Bu depo benim **kişisel deneysel projemdir**. Üretim garantisi, resmi destek veya kesintisiz çalışma taahhüdü yoktur. Platform tarafındaki değişikliklere göre zaman zaman güncelleme gerekebilir.
+
+---
+
+Built for my own browser workflow and learning.

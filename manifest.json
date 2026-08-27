@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "X Video Downloader - Personal",
-  "version": "1.0.0",
-  "description": "Adds a one-click video download button to X/Twitter posts.",
+  "name": "Personal X & Instagram Video Downloader",
+  "version": "1.2.0",
+  "description": "Personal Brave extension for downloading videos from X and Instagram with a quality picker.",
   "minimum_chrome_version": "111",
   "permissions": [
     "downloads",
@@ -11,7 +11,12 @@
   "host_permissions": [
     "https://x.com/*",
     "https://twitter.com/*",
-    "https://video.twimg.com/*"
+    "https://video.twimg.com/*",
+    "https://www.instagram.com/*",
+    "https://instagram.com/*",
+    "https://*.instagram.com/*",
+    "https://*.cdninstagram.com/*",
+    "https://*.fbcdn.net/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -20,7 +25,9 @@
     {
       "matches": [
         "https://x.com/*",
-        "https://twitter.com/*"
+        "https://twitter.com/*",
+        "https://www.instagram.com/*",
+        "https://instagram.com/*"
       ],
       "js": [
         "page-hook.js"
@@ -31,7 +38,9 @@
     {
       "matches": [
         "https://x.com/*",
-        "https://twitter.com/*"
+        "https://twitter.com/*",
+        "https://www.instagram.com/*",
+        "https://instagram.com/*"
       ],
       "js": [
         "content.js"

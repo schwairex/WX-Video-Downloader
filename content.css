@@ -1,142 +1,260 @@
-.xvd-overlay-anchor {
+.pvd-overlay-anchor {
   position: absolute;
   top: 12px;
   right: 12px;
-  z-index: 50;
+  z-index: 2147483000;
   pointer-events: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-.xvd-overlay-button {
+.pvd-overlay-button {
   pointer-events: auto;
   appearance: none;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  background:
-    linear-gradient(180deg, rgba(24, 24, 27, 0.88), rgba(15, 23, 42, 0.82));
+  background: linear-gradient(
+    180deg,
+    rgba(24, 24, 27, 0.90),
+    rgba(15, 23, 42, 0.86)
+  );
   color: #f8fafc;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 7px;
   min-height: 40px;
-  padding: 0 14px;
+  padding: 0 13px;
   border-radius: 999px;
   cursor: pointer;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font: inherit;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 750;
   line-height: 1;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   box-shadow:
-    0 10px 24px rgba(0, 0, 0, 0.26),
+    0 10px 26px rgba(0, 0, 0, 0.30),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
   transition:
     transform 150ms ease,
     box-shadow 150ms ease,
-    background-color 150ms ease,
+    background 150ms ease,
     opacity 150ms ease;
 }
 
-.xvd-overlay-button:hover {
+.pvd-overlay-button:hover {
   transform: translateY(-1px);
+  background: linear-gradient(
+    180deg,
+    rgba(29, 155, 240, 0.98),
+    rgba(15, 112, 184, 0.96)
+  );
   box-shadow:
-    0 14px 30px rgba(0, 0, 0, 0.32),
-    0 0 0 4px rgba(29, 155, 240, 0.15);
-  background:
-    linear-gradient(180deg, rgba(29, 155, 240, 0.96), rgba(18, 120, 190, 0.94));
+    0 14px 32px rgba(0, 0, 0, 0.34),
+    0 0 0 4px rgba(29, 155, 240, 0.14);
 }
 
-.xvd-overlay-button:active {
+.pvd-overlay-button:active {
   transform: scale(0.97);
 }
 
-.xvd-overlay-button[data-state="loading"] {
+.pvd-overlay-button[data-state="loading"] {
+  opacity: 0.78;
   cursor: progress;
-  opacity: 0.88;
 }
 
-.xvd-overlay-button[data-state="done"] {
-  background:
-    linear-gradient(180deg, rgba(16, 185, 129, 0.96), rgba(5, 150, 105, 0.94));
-  box-shadow:
-    0 14px 30px rgba(16, 185, 129, 0.25),
-    0 0 0 4px rgba(16, 185, 129, 0.12);
+.pvd-overlay-button[data-state="done"] {
+  background: linear-gradient(
+    180deg,
+    rgba(16, 185, 129, 0.98),
+    rgba(5, 150, 105, 0.96)
+  );
 }
 
-.xvd-button-icon {
+.pvd-button-icon,
+.pvd-chevron {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
   flex: 0 0 auto;
 }
 
-.xvd-button-icon svg {
+.pvd-button-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.pvd-chevron {
+  width: 13px;
+  height: 13px;
+  margin-left: 1px;
+  opacity: 0.82;
+}
+
+.pvd-button-icon svg,
+.pvd-chevron svg {
   display: block;
   fill: currentColor;
 }
 
-.xvd-button-label {
+.pvd-button-label {
   white-space: nowrap;
 }
 
-.xvd-toast {
+.pvd-quality-menu {
+  pointer-events: auto;
+  position: absolute;
+  top: 48px;
+  right: 0;
+  width: 190px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  background: rgba(15, 20, 25, 0.96);
+  color: #f8fafc;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  opacity: 0;
+  transform: translateY(-5px) scale(0.98);
+  transform-origin: top right;
+  transition:
+    opacity 130ms ease,
+    transform 130ms ease;
+}
+
+.pvd-quality-menu-show {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.pvd-quality-title {
+  padding: 11px 12px 8px;
+  color: rgba(248, 250, 252, 0.62);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pvd-quality-option {
+  appearance: none;
+  width: 100%;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: transparent;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 12px;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.pvd-quality-option:hover {
+  background: rgba(29, 155, 240, 0.13);
+  color: #ffffff;
+}
+
+.pvd-quality-main {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.pvd-quality-label {
+  font-size: 13px;
+  font-weight: 780;
+}
+
+.pvd-quality-dimensions {
+  color: rgba(248, 250, 252, 0.53);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pvd-best-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(29, 155, 240, 0.16);
+  color: rgb(93, 190, 255);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.055em;
+}
+
+.pvd-toast {
   position: fixed;
   z-index: 2147483647;
   right: 22px;
   bottom: 22px;
   max-width: min(420px, calc(100vw - 44px));
   padding: 12px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
   border-radius: 14px;
   color: #f7f9f9;
   background: rgba(15, 20, 25, 0.96);
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.30);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 650;
   line-height: 1.35;
   opacity: 0;
   transform: translateY(8px) scale(0.98);
   pointer-events: none;
-  transition: opacity 180ms ease, transform 180ms ease;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
 }
 
-.xvd-toast-show {
+.pvd-toast-show {
   opacity: 1;
   transform: translateY(0) scale(1);
 }
 
-.xvd-toast-success {
-  box-shadow: 0 12px 34px rgba(0, 186, 124, 0.16);
+.pvd-toast-success {
+  box-shadow:
+    0 14px 38px rgba(0, 0, 0, 0.30),
+    0 0 0 1px rgba(16, 185, 129, 0.12);
 }
 
-.xvd-toast-error {
-  box-shadow: 0 12px 34px rgba(244, 33, 46, 0.16);
+.pvd-toast-error {
+  box-shadow:
+    0 14px 38px rgba(0, 0, 0, 0.30),
+    0 0 0 1px rgba(244, 63, 94, 0.14);
 }
 
 @media (max-width: 640px) {
-  .xvd-overlay-anchor {
+  .pvd-overlay-anchor {
     top: 8px;
     right: 8px;
   }
 
-  .xvd-overlay-button {
+  .pvd-overlay-button {
     min-height: 36px;
-    padding: 0 12px;
-    font-size: 12px;
-    gap: 6px;
+    padding: 0 10px;
   }
 
-  .xvd-button-label {
+  .pvd-button-label {
     display: none;
   }
-}
 
-@media (prefers-color-scheme: light) {
-  .xvd-toast {
-    color: #0f1419;
-    background: rgba(255, 255, 255, 0.97);
-    border: 1px solid rgba(15, 20, 25, 0.08);
+  .pvd-quality-menu {
+    top: 44px;
+    width: 176px;
   }
 }
