@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.5.1] - 2026-08-27 (revised build)
+
+### Fixed — Instagram Download Delay
+- Removed the forced `saveAs: true` flow from normal media downloads.
+- Instagram Story and video downloads now start with `saveAs: false` for a direct browser download.
+- Fixed the long delay before the browser save/download flow appeared on Instagram.
+- Reduced unnecessary work in the critical path by preparing the candidate list only once.
+- Selected Instagram media is now queued from the already-prepared candidate list without a second preparation pass.
+- The background download action now starts immediately after the click acknowledgement.
+- Preserved same-post candidate fallback logic for safer Instagram downloads.
+
+### Fixed — General Download Responsiveness
+- Reduced the perceived delay after clicking a quality option.
+- The download action now reports back to the UI faster.
+- Kept `runtime.sendMessage()` as the primary transport for the critical download path.
+- Preserved the Port channel only as a fallback.
+
+### UI / UX
+- Redesigned the floating **İNDİR** button to match the provided neon-green concept more closely.
+- Redesigned the quality-selection menu with a dark panel, neon green borders, and stronger glow.
+- Switched the menu typography to a more compact uppercase style.
+- Highlighted the top quality option visually.
+- Simplified icons and option rows to keep the interface cleaner.
+
+### Notes
+This revised build keeps the manifest version at **1.5.1** as requested, but it is a newer hotfix build than the previous v1.5.1 package.
+
 ## [1.5.1] - 2026-08-27
 
 ### Fixed — X / Twitter Downloads

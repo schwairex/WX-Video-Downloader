@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Personal X & Instagram Video Downloader",
   "version": "1.5.1",
-  "description": "Personal privacy-focused WebExtension for fast and stable X and Instagram media downloads.",
+  "description": "Personal privacy-focused WebExtension for faster X and Instagram media downloads with redesigned neon UI.",
   "permissions": [
     "downloads",
     "webRequest",

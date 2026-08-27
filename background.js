@@ -928,13 +928,13 @@ async function startNativeDownload(url, filename) {
     throw new Error("Tarayıcının indirme API'si kullanılamıyor.");
   }
 
-  // saveAs:true intentionally asks the browser to open its native file chooser
-  // immediately. This avoids waiting for remote media probing before the user
-  // gets the save UI.
+  // v1.5.1 revised build: start the browser download immediately and avoid
+  // opening the Save As dialog on every click. This removes the long perceived
+  // delay some Instagram URLs caused before the picker appeared.
   const options = {
     url,
     filename,
-    saveAs: true
+    saveAs: false
   };
 
   try {
@@ -1079,19 +1079,7 @@ function prepareSelectedDownload(tabId, payload) {
   };
 }
 
-async function runQueuedDownload(tabId, payload, token) {
-  const prepared = prepareSelectedDownload(tabId, payload);
-
-  if (!prepared.ok) {
-    await sendDownloadStatus(tabId, {
-      token,
-      status: "error",
-      message: prepared.message
-    });
-
-    return;
-  }
-
+async function runPreparedDownload(tabId, payload, token, prepared) {
   let lastError = null;
 
   for (const candidate of prepared.candidates) {
@@ -1153,16 +1141,15 @@ function queueSelectedDownload(tabId, payload) {
 
   const token = makeDownloadToken(payload);
 
-  // Fire-and-forget by design. The native file chooser is triggered by
-  // startNativeDownload; the content script does not wait for the chooser to
-  // close before regaining control.
-  void runQueuedDownload(tabId, payload, token);
+  // v1.5.1 revised build: no second prepare pass and no save dialog wait.
+  // We queue the already-prepared candidates immediately.
+  void runPreparedDownload(tabId, payload, token, prepared);
 
   return {
     ok: true,
     queued: true,
     token,
-    message: "İndirme penceresi açılıyor."
+    message: "İndirme başlatıldı."
   };
 }
 
@@ -1405,7 +1392,7 @@ async function dispatchRuntimeRequest(message, tabId) {
   if (message?.type === "PING") {
     return {
       ok: true,
-      version: "1.5.0",
+      version: "1.5.1",
       now: Date.now()
     };
   }

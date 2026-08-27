@@ -38,36 +38,31 @@ The project is designed around four principles:
 
 ## What's new in v1.5.1?
 
-### Download flow rebuilt for reliability
+### Revised build — faster Instagram download start
 
-v1.5.1 simplifies the critical **quality → download** path again.
+This revised v1.5.1 build removes the forced **Save As** dialog from the normal
+media-download path.
 
-- `runtime.sendMessage()` is the primary page-to-background transport.
-- The reconnectable Port remains only as a fallback.
-- A selected download receives an immediate queue acknowledgement.
-- The content UI no longer waits for the native file chooser to close.
-- The browser's own **Save As** dialog is requested explicitly with
-  `saveAs: true`.
-- Download success/error is reported back to the page asynchronously.
+- media downloads now start with `saveAs: false`,
+- the browser begins the download immediately,
+- the extension no longer waits for a file-picker interaction,
+- the selected candidate list is prepared only once,
+- the already-prepared candidates are downloaded directly.
 
-### X / Twitter
+This change specifically targets the slow Instagram Story / video flow where the
+native save-location window could appear very late.
 
-The exact quality URL selected by the user is attempted first. The extra
-messaging layer introduced in v1.5.0 is no longer on the normal critical path.
+### UI refresh
 
-### Instagram
+The floating download button and quality menu were redesigned to match the
+provided neon-green concept more closely:
 
-Instagram uses a separate reliability policy:
-
-- progressive `video_versions` / `video_url` sources are preferred over raw
-  player-observed requests,
-- the selected resolution is preserved where possible,
-- only fallbacks from the same Instagram post/media family are considered,
-- generic `start`, `end`, and `range` query parameters are no longer stripped
-  from signed CDN URLs,
-- only known `bytestart` / `byteend` playback-slice hints are removed,
-- pre-download fetch validation does not delay or cancel the normal browser
-  save flow.
+- bright lime **İNDİR** button,
+- dark panel,
+- neon borders and glow,
+- uppercase typography,
+- emphasized first quality option,
+- simpler visual hierarchy.
 
 
 ## Features

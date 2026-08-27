@@ -794,8 +794,8 @@
           ${buttonIconSvg()}
         </div>
         <div class="pvd-menu-head-copy">
-          <strong>${type === "image" ? "Görseli indir" : "İndirme seçenekleri"}</strong>
-          <span>${type === "image" ? "Orijinal kaynak" : "Kalite seç"}</span>
+          <strong>${type === "image" ? "HİKAYE GÖRSELİNİ İNDİR" : "VİDEO KALİTESİ SEÇİN"}</strong>
+          <span>${type === "image" ? "ORİJİNAL KALİTE" : "Tek dokunuşla indir"}</span>
         </div>
         <span class="pvd-menu-platform">${platform() === "instagram" ? "IG" : "X"}</span>
       </div>
@@ -803,8 +803,8 @@
         <div class="pvd-loading">
           <i></i>
           <div>
-            <strong>Kaynak hazırlanıyor</strong>
-            <span>Medya bağlantısı doğrulanıyor…</span>
+            <strong>SEÇENEKLER HAZIRLANIYOR</strong>
+            <span>Lütfen çok kısa bekleyin</span>
           </div>
         </div>
       </div>
@@ -911,8 +911,8 @@
         variant.height
           ? `${variant.width} × ${variant.height}`
           : type === "image"
-            ? "Orijinal görsel"
-            : "Orijinal medya";
+            ? "ORİJİNAL GÖRSEL"
+            : "ORİJİNAL MEDYA";
 
       option.innerHTML = `
         <span class="pvd-option-left">
@@ -957,10 +957,10 @@
           </span>
           <span class="pvd-option-copy">
             <span class="pvd-option-title">
-              <b>Sadece Ses</b>
+              <b>SES OLARAK İNDİR</b>
               <em class="pvd-mp3-badge">AUDIO</em>
             </span>
-            <small>Ses dosyası olarak kaydet</small>
+            <small>Yüksek kalite audio çıktısı</small>
           </span>
         </span>
         <span class="pvd-option-action">♪</span>
@@ -979,7 +979,7 @@
 
     note.innerHTML = `
       <span class="pvd-clean-check">✓</span>
-      <span>${type === "image" ? "Orijinal Story kaynağı" : "Doğrudan medya kaynağı"}</span>
+      <span>${type === "image" ? "Doğrudan görsel kaynağı" : "Doğrudan medya kaynağı"}</span>
     `;
 
     body.appendChild(note);
@@ -1236,7 +1236,7 @@
         ${buttonIconSvg()}
       </span>
       <span class="pvd-button-label">
-        ${mediaType(element) === "image" ? "Görseli İndir" : "İndir"}
+        ${mediaType(element) === "image" ? "İNDİR" : "İNDİR"}
       </span>
       <span class="pvd-chevron">
         <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -1636,8 +1636,8 @@
         if (message.status === "started") {
           toast(
             message.mediaType === "image"
-              ? "Görsel indirme başlatıldı"
-              : `İndirme başlatıldı${message.quality ? ` • ${message.quality}` : ""}`,
+              ? "İndirme başladı"
+              : `İndirme başladı${message.quality ? ` • ${message.quality}` : ""}`,
             "success"
           );
         } else if (message.status === "error") {
