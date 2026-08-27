@@ -1,20 +1,30 @@
-.pvd-overlay-anchor {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 2147483000;
+.pvd-overlay-portal {
+  position: fixed;
+  z-index: 2147483646;
   pointer-events: none;
+  transform: translateX(-100%);
+  opacity: 0;
+  visibility: hidden;
+  isolation: isolate;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  transition: opacity 120ms ease;
+}
+
+.pvd-overlay-portal.pvd-overlay-visible {
+  opacity: 1;
+  visibility: visible;
 }
 
 .pvd-overlay-button {
-  pointer-events: auto;
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 2147483647;
   appearance: none;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: linear-gradient(
     180deg,
-    rgba(24, 24, 27, 0.90),
-    rgba(15, 23, 42, 0.86)
+    rgba(24, 24, 27, 0.92),
+    rgba(15, 23, 42, 0.88)
   );
   color: #f8fafc;
   display: inline-flex;
@@ -24,11 +34,14 @@
   min-height: 40px;
   padding: 0 13px;
   border-radius: 999px;
-  cursor: pointer;
+  cursor: pointer !important;
   font: inherit;
   font-size: 13px;
   font-weight: 750;
   line-height: 1;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   box-shadow:
@@ -59,7 +72,7 @@
 
 .pvd-overlay-button[data-state="loading"] {
   opacity: 0.78;
-  cursor: progress;
+  cursor: progress !important;
 }
 
 .pvd-overlay-button[data-state="done"] {
@@ -101,15 +114,16 @@
 }
 
 .pvd-quality-menu {
-  pointer-events: auto;
+  pointer-events: auto !important;
   position: absolute;
   top: 48px;
   right: 0;
+  z-index: 2147483647;
   width: 190px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 16px;
-  background: rgba(15, 20, 25, 0.96);
+  background: rgba(15, 20, 25, 0.97);
   color: #f8fafc;
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
@@ -139,6 +153,7 @@
 }
 
 .pvd-quality-option {
+  pointer-events: auto !important;
   appearance: none;
   width: 100%;
   border: 0;
@@ -150,7 +165,7 @@
   justify-content: space-between;
   gap: 10px;
   padding: 11px 12px;
-  cursor: pointer;
+  cursor: pointer !important;
   font: inherit;
   text-align: left;
   transition:
@@ -239,11 +254,6 @@
 }
 
 @media (max-width: 640px) {
-  .pvd-overlay-anchor {
-    top: 8px;
-    right: 8px;
-  }
-
   .pvd-overlay-button {
     min-height: 36px;
     padding: 0 10px;

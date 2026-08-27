@@ -1,84 +1,108 @@
 # Personal X & Instagram Video Downloader
 
-> **Personal project / kişisel kullanım projesi.**  
-> Bu depo benim Brave tarayıcımda kullanmak ve tarayıcı eklentisi geliştirmeyi öğrenmek için hazırladığım küçük bir kişisel projedir. Ticari bir ürün, resmi istemci veya X / Instagram hizmeti değildir.
+> **Personal / experimental browser-extension project.**  
+> This repository is a small project I built for my own browser workflow and for learning WebExtension development. It is not an official X, Twitter, Meta, or Instagram product.
 
-Brave üzerinde X (Twitter) ve Instagram videolarının üzerine küçük bir **İndir** düğmesi ekleyen, mümkün olduğunda mevcut video kalite seçeneklerini gösteren Manifest V3 tarayıcı eklentisi.
+A lightweight WebExtension that adds an **İndir / Download** button to videos on X and Instagram and, when possible, lets you choose from the detected video quality variants.
 
-## Neden yaptım?
+## v1.3.0
 
-X ve Instagram'da kendi tarayıcı kullanımım sırasında, indirme hakkına sahip olduğum videoları ayrı bir siteye veya üçüncü taraf indirme servisine göndermeden daha pratik şekilde kaydetmek istedim.
+v1.3.0 focuses on Instagram interaction fixes and cross-browser compatibility.
 
-Projenin temel hedefleri:
+- Fixed the visible-but-not-clickable download button on `instagram.com/reels`.
+- Fixed the same click conflict on Instagram Home/feed posts where Instagram's profile/post overlay could sit on top of the extension button.
+- The Instagram control now uses an independent top-level **overlay portal** instead of being inserted inside Instagram's clickable DOM.
+- Added periodic position syncing for Instagram's virtualized Reels/feed interface.
+- Moved extension API usage to a cross-browser `browser` / `chrome` compatibility layer.
+- Added Manifest V3 background fallback for Chromium, Firefox, and Safari-style WebExtension environments.
 
-- kişisel kullanım,
-- basit ve temiz arayüz,
-- üçüncü taraf indirme sitesi kullanmamak,
-- mümkün olduğunca işlemleri tarayıcı içinde yapmak,
-- Brave / Chromium Manifest V3 yapısını öğrenmek.
-
-## Özellikler
+## Features
 
 ### X / Twitter
 
-- Video bulunan tweetlerde videonun sağ üst tarafında modern indirme düğmesi.
-- İndir düğmesine basınca küçük kalite menüsü.
-- Yakalanabilen MP4/WebM seçenekleri arasından çözünürlük seçimi.
-- En yüksek kaliteyi menüde **EN İYİ** etiketiyle gösterme.
-- X'in `video.twimg.com` medya isteklerini ve sayfa içi video varyantlarını yerel olarak yakalama.
-- Dosyaları `Downloads/X-Videos/` altında saklama.
+- Floating video download button.
+- Quality-selection menu before download.
+- Detected MP4/WebM variants.
+- Highest detected variant marked as **EN İYİ / BEST**.
+- Downloads saved under `Downloads/X-Videos/`.
 
 ### Instagram
 
-- Video gönderileri ve Reels üzerinde indirme düğmesi.
-- İndir düğmesine basınca mevcut kalite seçeneklerini gösterme.
-- Instagram'ın doğrudan video URL'lerini DOM'daki `blob:` adresine güvenmeden, sayfa/API yanıtlarındaki video verilerinden yakalamaya çalışma.
-- `video_versions` / `video_url` gibi mevcut medya verilerinden progressive MP4 kaynaklarını kullanma.
-- Dosyaları `Downloads/Instagram-Videos/` altında saklama.
+- Instagram Home/feed video support.
+- Instagram video post support.
+- Instagram Reels support.
+- Quality picker when multiple variants are detected.
+- Independent overlay portal so Instagram profile/reel click layers do not steal the download-button click.
+- Downloads saved under `Downloads/Instagram-Videos/`.
 
-## Gizlilik yaklaşımı
+## Browser support
 
-Bu proje için özellikle basit bir yaklaşım tercih ettim:
+The project now targets the common WebExtensions ecosystem rather than Brave only.
 
-- Kendi indirme sunucum yok.
-- Üçüncü taraf video indirme API'si kullanılmıyor.
-- Analitik veya takip kodu yok.
-- Yakalanan medya URL'leri uzantının belleğinde geçici olarak tutuluyor.
-- İndirme Brave/Chromium'un kendi `downloads` API'si ile başlatılıyor.
+| Browser | Status | Local development installation |
+| --- | --- | --- |
+| Google Chrome | Supported | `chrome://extensions` → Developer mode → Load unpacked |
+| Brave | Supported | `brave://extensions` → Developer mode → Load unpacked |
+| Microsoft Edge | Supported | `edge://extensions` → Developer mode → Load unpacked |
+| Opera | Supported | Extensions page → Developer mode → Load unpacked |
+| Vivaldi | Supported | `vivaldi://extensions` → Developer mode → Load unpacked |
+| Firefox | Supported source/API path | `about:debugging#/runtime/this-firefox` → Load Temporary Add-on → select `manifest.json` |
+| Safari | WebExtension-compatible source | Safari requires its own Web Extension packaging/distribution step |
 
-Eklenti yalnızca gerekli platform ve medya alan adları için izin ister.
+The same JavaScript/CSS source is used across these browsers. Browser stores and Safari use their own signing/package/distribution processes.
 
-## Kurulum — Brave
+## Why an overlay portal?
 
-Bu proje mağaza üzerinden dağıtılan bir eklenti değil. Kişisel olarak **unpacked extension** şeklinde kullanıyorum.
+Instagram places multiple clickable layers over media. On Home and Reels, a button inserted directly into the Instagram post/video DOM can visually appear above the video while the platform's own profile/post link still receives the click.
 
-1. Repoyu indir veya klonla.
-2. Brave'de şu adresi aç:
-   `brave://extensions`
-3. Sağ üstten **Developer mode / Geliştirici modu** seçeneğini aç.
-4. **Load unpacked / Paketlenmemiş öğe yükle** seçeneğine bas.
-5. Bu deponun kök klasörünü seç.
-6. Açık X ve Instagram sekmelerini yenile.
+Starting with v1.3.0, the extension:
 
-## Kullanım
+1. Detects each visible `<video>`.
+2. Creates the extension control under the page's top-level document instead of inside Instagram's link hierarchy.
+3. Positions that control over the video's top-right corner.
+4. Repositions it on scrolling, resizing, DOM virtualization, and Reels transitions.
+5. Captures the download interaction independently from Instagram's delegated click handlers.
 
-### X
+This keeps the same visual placement while separating the extension's click target from Instagram's own interactive layers.
 
-1. Video içeren bir tweet aç.
-2. Videonun sağ üstündeki **İndir** düğmesine bas.
-3. Açılan kalite menüsünden istediğin çözünürlüğü seç.
-4. Video `Downloads/X-Videos/` klasörüne kaydedilir.
+## Privacy approach
 
-### Instagram
+- No custom download server.
+- No third-party video-download API.
+- No analytics.
+- No tracking code.
+- Detected media URLs are held temporarily in extension memory.
+- Downloads are started through the browser's WebExtensions downloads API.
 
-1. Bir video gönderisi veya Reel aç.
-2. Videonun üzerindeki **İndir** düğmesine bas.
-3. Yakalanabilen kalite seçeneklerinden birini seç.
-4. Video `Downloads/Instagram-Videos/` klasörüne kaydedilir.
+## Installation
 
-Instagram veya X medya kaynağını henüz yüklememişse videoyu birkaç saniye oynatıp tekrar denemek gerekebilir.
+### Chromium browsers
 
-## Proje yapısı
+This covers Chrome, Brave, Edge, Opera, Vivaldi, and most Chromium-based desktop browsers.
+
+1. Download or clone this repository.
+2. Open your browser's extensions page.
+3. Enable **Developer mode**.
+4. Choose **Load unpacked**.
+5. Select the repository folder containing `manifest.json`.
+6. Reload open X and Instagram tabs.
+
+### Firefox
+
+For development/testing:
+
+1. Open `about:debugging#/runtime/this-firefox`.
+2. Choose **Load Temporary Add-on**.
+3. Select `manifest.json`.
+4. Reload X or Instagram.
+
+A permanently distributed Firefox extension normally goes through Firefox's signing/distribution process.
+
+### Safari
+
+The source is structured as a WebExtension-compatible project, but Safari does not use Chromium's normal “Load unpacked” workflow. Package/import the WebExtension using Apple's Safari Web Extension tooling for the Safari version you target.
+
+## Project structure
 
 ```text
 personal-social-video-downloader/
@@ -88,72 +112,41 @@ personal-social-video-downloader/
 ├── content.js
 ├── content.css
 ├── README.md
+├── CHANGELOG.md
 └── .gitignore
 ```
 
-### `manifest.json`
-
-Manifest V3 ayarları, platform izinleri ve content script tanımları.
-
 ### `page-hook.js`
 
-Sayfanın kendi JavaScript ortamında çalışır. X ve Instagram'ın video bilgilerini taşıyan fetch/XHR yanıtlarını ve medya kaynaklarını gözlemlemeye çalışır.
+Runs in the webpage's main JavaScript world and observes media-related page/network data exposed to the browser.
 
 ### `content.js`
 
-Sayfadaki video alanlarını bulur, indirme düğmesini ve kalite menüsünü ekler.
+Detects videos, creates the independent overlay portals, renders the quality picker, and communicates with the extension background context.
 
 ### `background.js`
 
-Yakalanan video varyantlarını sekme bazında geçici olarak tutar, kalite listesini hazırlar ve indirmeyi başlatır.
+Stores detected media variants temporarily per tab and starts the selected download.
 
-### `content.css`
+## Limitations
 
-Floating indirme butonu, kalite menüsü ve bildirimlerin görünümü.
+This is a best-effort personal project. X and Instagram can change their frontend, media endpoints, or playback system at any time, so future site changes may require updates.
 
-## Teknik notlar
+The project is not intended for:
 
-Bu proje platformların resmi bir indirme API'sini kullanmıyor. X ve Instagram'ın web arayüzünde zaten tarayıcıya gönderilen medya verilerini yerel olarak gözlemlemeye dayanıyor.
+- DRM bypassing,
+- access-control bypassing,
+- private-content circumvention,
+- mass/profile scraping,
+- bulk archival systems.
 
-Bu nedenle platformların web arayüzleri değiştiğinde belirli özellikler zaman zaman bozulabilir. Özellikle Instagram ön yüzü ve medya sunumu sık değişebildiği için proje **best-effort** mantığıyla çalışır.
+## Responsible use
 
-Manifest V3 content script yapısında sayfanın kendi `fetch` / XHR akışını gözlemleyebilmek için `page-hook.js` `MAIN` world'de çalışır. UI ve extension mesajlaşma tarafı ayrı content script içinde tutulur.
+Use the extension only for content you are allowed to download, store, or use. Being able to view a video on a platform does not automatically grant permission to redistribute it.
 
-## Kapsam
+## Trademark / affiliation notice
 
-Şu anki kişisel kullanım odağı:
-
-- X videoları
-- Instagram video postları
-- Instagram Reels
-
-Şu anda özellikle hedeflenmeyenler:
-
-- toplu profil indirme,
-- Instagram Story arşivleme,
-- resim/carousel toplu indirme,
-- DRM veya korumalı medya aşma,
-- platform erişim kontrollerini atlatma.
-
-## Sorumlu kullanım
-
-Bu eklentiyi yalnızca indirme, saklama veya kullanma hakkına sahip olduğun içeriklerde kullan.
-
-İçeriğin platformda görüntülenebiliyor olması, onu yeniden dağıtma veya başka amaçlarla kullanma hakkı verdiği anlamına gelmez. İçerik sahibinin hakları ve ilgili platform kuralları kullanıcı tarafından dikkate alınmalıdır.
-
-## Bağlılık / marka açıklaması
-
-Bu proje:
-
-- X Corp. ile bağlantılı değildir,
-- Meta Platforms, Inc. veya Instagram ile bağlantılı değildir,
-- bu şirketler tarafından onaylanmış veya desteklenmiş değildir.
-
-X, Twitter, Instagram ve ilgili marka adları kendi hak sahiplerine aittir.
-
-## Durum
-
-Bu depo benim **kişisel deneysel projemdir**. Üretim garantisi, resmi destek veya kesintisiz çalışma taahhüdü yoktur. Platform tarafındaki değişikliklere göre zaman zaman güncelleme gerekebilir.
+This project is not affiliated with, endorsed by, or sponsored by X Corp., Meta Platforms, Inc., or Instagram. Product and brand names belong to their respective owners.
 
 ---
 

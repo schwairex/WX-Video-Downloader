@@ -1,3 +1,5 @@
+const ext = globalThis.browser ?? globalThis.chrome;
+
 const tabMedia = new Map();
 
 const MAX_AGE_MS = 30 * 60 * 1000;
@@ -367,12 +369,23 @@ async function downloadSelected(tabId, payload) {
   const filename = `${folder}/${username}_${id}${qualityPart}.${ext}`;
 
   try {
-    const downloadId = await chrome.downloads.download({
+    const options = {
       url,
       filename,
-      saveAs: false,
-      conflictAction: "uniquify"
-    });
+      saveAs: false
+    };
+
+    // Chromium/Firefox support conflictAction. Keep a fallback for browsers
+    // that implement a smaller subset of the downloads API.
+    let downloadId;
+    try {
+      downloadId = await ext.downloads.download({
+        ...options,
+        conflictAction: "uniquify"
+      });
+    } catch (firstError) {
+      downloadId = await ext.downloads.download(options);
+    }
 
     return {
       ok: true,
@@ -389,7 +402,7 @@ async function downloadSelected(tabId, payload) {
   }
 }
 
-chrome.webRequest.onBeforeRequest.addListener(
+ext.webRequest.onBeforeRequest.addListener(
   (details) => {
     if (details.tabId < 0) return;
 
@@ -440,7 +453,7 @@ chrome.webRequest.onBeforeRequest.addListener(
   }
 );
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const tabId = sender.tab?.id;
 
   if (message?.type === "CACHE_VARIANTS") {
@@ -484,6 +497,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-chrome.tabs?.onRemoved?.addListener((tabId) => {
+ext.tabs?.onRemoved?.addListener((tabId) => {
   tabMedia.delete(tabId);
 });

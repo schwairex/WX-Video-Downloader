@@ -1,8 +1,13 @@
 (() => {
+  const ext = globalThis.browser ?? globalThis.chrome;
+
   const POST_SOURCE = "personal-social-video-downloader";
   const BUTTON_CLASS = "pvd-overlay-button";
   const MENU_CLASS = "pvd-quality-menu";
-  const MEDIA_MARK_ATTR = "data-pvd-overlay-ready";
+  const PORTAL_CLASS = "pvd-overlay-portal";
+
+  const overlayEntries = new Map();
+  let updateQueued = false;
 
   function platform() {
     return location.hostname.includes("instagram.com") ? "instagram" : "x";
@@ -15,7 +20,57 @@
     return match ? match[1] : null;
   }
 
-  function parseXPost(scope) {
+  function isVisibleVideo(video) {
+    if (!(video instanceof HTMLVideoElement)) return false;
+    if (!video.isConnected) return false;
+
+    const rect = video.getBoundingClientRect();
+    if (rect.width < 150 || rect.height < 100) return false;
+    if (rect.bottom <= 0 || rect.top >= window.innerHeight) return false;
+    if (rect.right <= 0 || rect.left >= window.innerWidth) return false;
+
+    const style = getComputedStyle(video);
+    if (style.display === "none" || style.visibility === "hidden") return false;
+    if (Number(style.opacity || 1) === 0) return false;
+
+    return true;
+  }
+
+  function closestUsefulInstagramScope(video) {
+    let node = video.parentElement;
+    let fallback = video.parentElement;
+    let depth = 0;
+
+    while (node && node !== document.body && depth < 12) {
+      fallback = node;
+
+      const hasPostLink = node.querySelector(
+        'a[href*="/reel/"], a[href*="/reels/"], a[href^="/p/"], a[href*="/p/"]'
+      );
+
+      if (hasPostLink) return node;
+      if (node.tagName === "ARTICLE") return node;
+
+      node = node.parentElement;
+      depth++;
+    }
+
+    return fallback || document.body;
+  }
+
+  function getScopeForVideo(video) {
+    if (platform() === "x") {
+      return video.closest('article[data-testid="tweet"]') ||
+        video.closest("article") ||
+        video.parentElement ||
+        document.body;
+    }
+
+    return closestUsefulInstagramScope(video);
+  }
+
+  function parseXPost(video) {
+    const scope = getScopeForVideo(video);
     const links = [...scope.querySelectorAll('a[href*="/status/"]')];
 
     for (const link of links) {
@@ -23,10 +78,7 @@
         const url = new URL(link.href, location.href);
         const match = url.pathname.match(/^\/([^/]+)\/status\/(\d+)/);
         if (match) {
-          return {
-            username: match[1],
-            tweetId: match[2]
-          };
+          return { username: match[1], tweetId: match[2] };
         }
       } catch (_) {}
     }
@@ -37,60 +89,77 @@
       : { username: "x_user", tweetId: "video" };
   }
 
-  function parseInstagramPost(scope) {
-    const links = [...scope.querySelectorAll('a[href]')];
+  function findInstagramPostLink(video) {
+    let node = video.parentElement;
+    let depth = 0;
 
-    for (const link of links) {
-      try {
-        const url = new URL(link.href, location.href);
-        const post = url.pathname.match(/^\/(?:reel|reels|p)\/([^/]+)/i);
-        if (post) {
-          return {
-            postKey: post[1],
-            username: findInstagramUsername(scope)
-          };
-        }
-      } catch (_) {}
+    while (node && node !== document.body && depth < 14) {
+      const links = [...node.querySelectorAll('a[href]')];
+
+      for (const link of links) {
+        try {
+          const url = new URL(link.href, location.href);
+          const match = url.pathname.match(/^\/(?:reel|reels|p)\/([^/]+)/i);
+          if (match) {
+            return { code: match[1], url };
+          }
+        } catch (_) {}
+      }
+
+      node = node.parentElement;
+      depth++;
     }
 
     const current = location.pathname.match(/^\/(?:reel|reels|p)\/([^/]+)/i);
-
-    return {
-      postKey: current ? current[1] : null,
-      username: findInstagramUsername(scope)
-    };
+    return current ? { code: current[1], url: new URL(location.href) } : null;
   }
 
-  function findInstagramUsername(scope) {
+  function findInstagramUsername(video) {
     const blocked = new Set([
       "accounts", "direct", "explore", "reel", "reels", "p",
-      "stories", "about", "legal", "web", "challenge"
+      "stories", "about", "legal", "web", "challenge", "privacy"
     ]);
 
-    const links = [...scope.querySelectorAll('a[href]')];
+    let node = video.parentElement;
+    let depth = 0;
 
-    for (const link of links) {
-      try {
-        const url = new URL(link.href, location.href);
-        const match = url.pathname.match(/^\/([^/]+)\/$/);
-        if (!match) continue;
+    while (node && node !== document.body && depth < 14) {
+      const links = [...node.querySelectorAll('a[href]')];
 
-        const candidate = match[1];
-        if (!blocked.has(candidate.toLowerCase())) return candidate;
-      } catch (_) {}
+      for (const link of links) {
+        try {
+          const url = new URL(link.href, location.href);
+          const match = url.pathname.match(/^\/([^/]+)\/$/);
+          if (!match) continue;
+
+          const candidate = match[1];
+          if (!blocked.has(candidate.toLowerCase())) return candidate;
+        } catch (_) {}
+      }
+
+      node = node.parentElement;
+      depth++;
     }
 
     return "instagram";
   }
 
-  function getVideoInfo(scope) {
-    const video = scope.querySelector("video");
-    if (!video) return null;
+  function parseInstagramPost(video) {
+    const post = findInstagramPostLink(video);
+
+    return {
+      postKey: post?.code || null,
+      username: findInstagramUsername(video)
+    };
+  }
+
+  function getVideoInfo(video) {
+    if (!(video instanceof HTMLVideoElement)) return null;
 
     const directUrl = [video.currentSrc, video.src].find(
       (url) =>
         typeof url === "string" &&
-        url.startsWith("http") &&
+        /^https?:/i.test(url) &&
         !url.startsWith("blob:")
     );
 
@@ -100,6 +169,8 @@
         video.src,
         video.poster
       ].filter(Boolean);
+
+      let scope = getScopeForVideo(video);
 
       for (const img of scope.querySelectorAll("img")) {
         const src = img.currentSrc || img.src || "";
@@ -118,7 +189,11 @@
         if (mediaKey) break;
       }
 
-      return { video, directUrl: directUrl || null, mediaKey };
+      return {
+        video,
+        directUrl: directUrl || null,
+        mediaKey
+      };
     }
 
     return {
@@ -153,6 +228,7 @@
 
   function setButtonState(button, state) {
     button.dataset.state = state;
+
     const label = button.querySelector(".pvd-button-label");
     if (!label) return;
 
@@ -161,55 +237,13 @@
     else label.textContent = "İndir";
   }
 
-  function findMediaContainer(video, scope) {
-    const videoRect = video.getBoundingClientRect();
-    let node = video.parentElement;
-    let best = video.parentElement;
-    let depth = 0;
-
-    while (node && node !== scope.parentElement && depth < 8) {
-      const rect = node.getBoundingClientRect();
-      const style = window.getComputedStyle(node);
-
-      const similarWidth =
-        videoRect.width > 0 &&
-        rect.width >= videoRect.width * 0.85 &&
-        rect.width <= videoRect.width * 1.35;
-
-      const similarHeight =
-        videoRect.height > 0 &&
-        rect.height >= videoRect.height * 0.75 &&
-        rect.height <= videoRect.height * 1.35;
-
-      if (
-        rect.width > 180 &&
-        rect.height > 120 &&
-        similarWidth &&
-        similarHeight
-      ) {
-        best = node;
-
-        if (
-          style.overflow === "hidden" ||
-          parseFloat(style.borderRadius || "0") > 0
-        ) {
-          return node;
-        }
-      }
-
-      node = node.parentElement;
-      depth++;
-    }
-
-    return best || video.parentElement;
-  }
-
-  function buildRequestData(scope) {
-    const info = getVideoInfo(scope);
+  function buildRequestData(video) {
+    const info = getVideoInfo(video);
     if (!info) return null;
 
     if (platform() === "x") {
-      const post = parseXPost(scope);
+      const post = parseXPost(video);
+
       return {
         platform: "x",
         username: post.username,
@@ -219,7 +253,8 @@
       };
     }
 
-    const post = parseInstagramPost(scope);
+    const post = parseInstagramPost(video);
+
     return {
       platform: "instagram",
       username: post.username,
@@ -228,15 +263,24 @@
     };
   }
 
-  async function downloadVariant(scope, button, variant) {
-    const data = buildRequestData(scope);
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  async function downloadVariant(video, button, variant) {
+    const data = buildRequestData(video);
     if (!data) return;
 
     closeAllMenus();
     setButtonState(button, "loading");
 
     try {
-      const response = await chrome.runtime.sendMessage({
+      const response = await ext.runtime.sendMessage({
         type: "DOWNLOAD_SELECTED",
         ...data,
         selectedUrl: variant.url
@@ -248,7 +292,6 @@
           `İndirme başladı${response.quality ? ` • ${response.quality}` : ""}`,
           "success"
         );
-
         setTimeout(() => setButtonState(button, "idle"), 1700);
       } else {
         setButtonState(button, "idle");
@@ -260,7 +303,7 @@
     }
   }
 
-  function renderQualityMenu(anchor, scope, button, variants) {
+  function renderQualityMenu(portal, video, button, variants) {
     closeAllMenus();
 
     const menu = document.createElement("div");
@@ -294,35 +337,24 @@
       option.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        downloadVariant(scope, button, variant);
-      });
+        event.stopImmediatePropagation();
+        downloadVariant(video, button, variant);
+      }, true);
 
       menu.appendChild(option);
     }
 
-    anchor.appendChild(menu);
-
-    requestAnimationFrame(() => {
-      menu.classList.add("pvd-quality-menu-show");
-    });
+    portal.appendChild(menu);
+    requestAnimationFrame(() => menu.classList.add("pvd-quality-menu-show"));
   }
 
-  function escapeHtml(value) {
-    return String(value)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  }
-
-  async function openQualityMenu(scope, button, anchor) {
-    if (anchor.querySelector(`.${MENU_CLASS}`)) {
+  async function openQualityMenu(video, button, portal) {
+    if (portal.querySelector(`.${MENU_CLASS}`)) {
       closeAllMenus();
       return;
     }
 
-    const data = buildRequestData(scope);
+    const data = buildRequestData(video);
     if (!data) {
       showToast("Bu alanda indirilebilir video bulunamadı.", "error");
       return;
@@ -331,7 +363,7 @@
     setButtonState(button, "loading");
 
     try {
-      const response = await chrome.runtime.sendMessage({
+      const response = await ext.runtime.sendMessage({
         type: "GET_VARIANTS",
         ...data
       });
@@ -343,14 +375,14 @@
         return;
       }
 
-      renderQualityMenu(anchor, scope, button, response.variants || []);
+      renderQualityMenu(portal, video, button, response.variants || []);
     } catch (error) {
       setButtonState(button, "idle");
       showToast(error?.message || "Kalite seçenekleri alınamadı.", "error");
     }
   }
 
-  function makeOverlayButton(scope, anchor) {
+  function makeOverlayButton(video, portal) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = BUTTON_CLASS;
@@ -371,121 +403,108 @@
       </span>
     `;
 
+    // Prevent Instagram's post/profile click handlers from stealing the gesture.
+    for (const eventName of ["pointerdown", "mousedown", "touchstart"]) {
+      button.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }, true);
+    }
+
     button.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
+      event.stopImmediatePropagation();
 
       if (button.dataset.state === "loading") return;
-      await openQualityMenu(scope, button, anchor);
-    });
+      await openQualityMenu(video, button, portal);
+    }, true);
 
     return button;
   }
 
-  function installOverlay(scope) {
-    if (!(scope instanceof HTMLElement)) return;
+  function createPortal(video) {
+    if (overlayEntries.has(video)) return overlayEntries.get(video);
 
-    const video = scope.querySelector("video");
-    if (!video) return;
+    const portal = document.createElement("div");
+    portal.className = PORTAL_CLASS;
+    portal.dataset.platform = platform();
 
-    const container = findMediaContainer(video, scope);
-    if (!container) return;
-    if (container.getAttribute(MEDIA_MARK_ATTR) === "1") return;
+    const button = makeOverlayButton(video, portal);
+    portal.appendChild(button);
+    document.documentElement.appendChild(portal);
 
-    if (container.querySelector(`.${BUTTON_CLASS}`)) {
-      container.setAttribute(MEDIA_MARK_ATTR, "1");
+    const entry = { video, portal, button };
+    overlayEntries.set(video, entry);
+    return entry;
+  }
+
+  function positionPortal(entry) {
+    const { video, portal } = entry;
+
+    if (!video.isConnected) {
+      portal.remove();
+      overlayEntries.delete(video);
       return;
     }
 
-    const style = window.getComputedStyle(container);
-    if (style.position === "static") {
-      container.style.position = "relative";
+    if (!isVisibleVideo(video)) {
+      portal.classList.remove("pvd-overlay-visible");
+      return;
     }
 
-    const anchor = document.createElement("div");
-    anchor.className = "pvd-overlay-anchor";
-    anchor.appendChild(makeOverlayButton(scope, anchor));
-    container.appendChild(anchor);
+    const rect = video.getBoundingClientRect();
 
-    container.setAttribute(MEDIA_MARK_ATTR, "1");
+    // Keep the control inside the media without placing it inside Instagram's
+    // clickable profile/reel DOM. The portal itself lives under <html>.
+    const horizontalInset = rect.width < 360 ? 8 : 12;
+    const verticalInset = rect.height < 260 ? 8 : 12;
+
+    portal.style.left = `${Math.round(rect.right - horizontalInset)}px`;
+    portal.style.top = `${Math.round(rect.top + verticalInset)}px`;
+    portal.style.maxWidth = `${Math.max(120, Math.floor(rect.width - 20))}px`;
+
+    portal.classList.add("pvd-overlay-visible");
   }
 
-  function scanX() {
-    document
-      .querySelectorAll('article[data-testid="tweet"]')
-      .forEach(installOverlay);
-  }
+  function updatePortals() {
+    updateQueued = false;
 
-  function scanInstagram() {
-    const articles = [...document.querySelectorAll("article")].filter((article) =>
-      article.querySelector("video")
-    );
-
-    for (const article of articles) {
-      installOverlay(article);
+    for (const entry of [...overlayEntries.values()]) {
+      positionPortal(entry);
     }
+  }
 
-    // Individual post/reel pages or Reels viewer can render outside <article>.
-    if (/^\/(?:reel|reels|p)\//i.test(location.pathname)) {
-      const videos = [...document.querySelectorAll("main video, video")];
+  function queuePortalUpdate() {
+    if (updateQueued) return;
+    updateQueued = true;
+    requestAnimationFrame(updatePortals);
+  }
 
-      for (const video of videos) {
-        if (video.closest("article")) continue;
+  function scanVideos() {
+    const videos = [...document.querySelectorAll("video")];
 
-        let scope = video.parentElement;
-        let steps = 0;
+    for (const video of videos) {
+      if (!(video instanceof HTMLVideoElement)) continue;
 
-        while (
-          scope?.parentElement &&
-          steps < 6 &&
-          scope.parentElement !== document.body
-        ) {
-          const rect = scope.getBoundingClientRect();
-          if (rect.width > 280 && rect.height > 220) break;
-          scope = scope.parentElement;
-          steps++;
-        }
-
-        if (scope) installOverlay(scope);
+      // Ignore tiny previews/avatars/background media.
+      const rect = video.getBoundingClientRect();
+      if (rect.width && rect.height && (rect.width < 150 || rect.height < 100)) {
+        continue;
       }
+
+      createPortal(video);
     }
+
+    queuePortalUpdate();
   }
 
-  function scan() {
-    if (platform() === "instagram") scanInstagram();
-    else scanX();
-  }
-
-  let queued = false;
-  function queueScan() {
-    if (queued) return;
-    queued = true;
-
-    requestAnimationFrame(() => {
-      queued = false;
-      scan();
-    });
-  }
-
-  window.addEventListener("message", (event) => {
-    if (event.source !== window) return;
-    if (event.data?.source !== POST_SOURCE) return;
-    if (event.data?.type !== "MEDIA_VARIANTS") return;
-    if (!Array.isArray(event.data.variants) || !event.data.variants.length) return;
-
-    chrome.runtime
-      .sendMessage({
-        type: "CACHE_VARIANTS",
-        variants: event.data.variants
-      })
-      .catch(() => {});
-  });
-
+  // Capture clicks at document level as an extra guard against Instagram
+  // overlays that install aggressive delegated click handlers.
   document.addEventListener("click", (event) => {
-    if (
-      !event.target.closest(`.${BUTTON_CLASS}`) &&
-      !event.target.closest(`.${MENU_CLASS}`)
-    ) {
+    if (event.target.closest?.(`.${PORTAL_CLASS}`)) {
+      event.stopPropagation();
+    } else {
       closeAllMenus();
     }
   }, true);
@@ -494,7 +513,26 @@
     if (event.key === "Escape") closeAllMenus();
   });
 
-  const observer = new MutationObserver(queueScan);
+  window.addEventListener("message", (event) => {
+    if (event.source !== window) return;
+    if (event.data?.source !== POST_SOURCE) return;
+    if (event.data?.type !== "MEDIA_VARIANTS") return;
+    if (!Array.isArray(event.data.variants) || !event.data.variants.length) return;
+
+    Promise.resolve(
+      ext.runtime.sendMessage({
+        type: "CACHE_VARIANTS",
+        variants: event.data.variants
+      })
+    ).catch(() => {});
+  });
+
+  window.addEventListener("scroll", queuePortalUpdate, { passive: true });
+  window.addEventListener("resize", queuePortalUpdate, { passive: true });
+
+  const observer = new MutationObserver(() => {
+    scanVideos();
+  });
 
   function start() {
     observer.observe(document.documentElement, {
@@ -502,7 +540,13 @@
       subtree: true
     });
 
-    queueScan();
+    scanVideos();
+
+    // Instagram virtualizes the Reels/feed DOM. A low-cost periodic rescan
+    // catches recycled <video> elements even when mutation timing is unusual.
+    setInterval(() => {
+      scanVideos();
+    }, 1400);
   }
 
   if (document.documentElement) start();

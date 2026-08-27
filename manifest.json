@@ -1,9 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Personal X & Instagram Video Downloader",
-  "version": "1.2.0",
-  "description": "Personal Brave extension for downloading videos from X and Instagram with a quality picker.",
-  "minimum_chrome_version": "111",
+  "version": "1.3.0",
+  "description": "Personal cross-browser WebExtension for downloading X and Instagram videos with a quality picker.",
   "permissions": [
     "downloads",
     "webRequest"
@@ -12,22 +11,24 @@
     "https://x.com/*",
     "https://twitter.com/*",
     "https://video.twimg.com/*",
-    "https://www.instagram.com/*",
     "https://instagram.com/*",
     "https://*.instagram.com/*",
     "https://*.cdninstagram.com/*",
     "https://*.fbcdn.net/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "scripts": [
+      "background.js"
+    ]
   },
   "content_scripts": [
     {
       "matches": [
         "https://x.com/*",
         "https://twitter.com/*",
-        "https://www.instagram.com/*",
-        "https://instagram.com/*"
+        "https://instagram.com/*",
+        "https://*.instagram.com/*"
       ],
       "js": [
         "page-hook.js"
@@ -39,8 +40,8 @@
       "matches": [
         "https://x.com/*",
         "https://twitter.com/*",
-        "https://www.instagram.com/*",
-        "https://instagram.com/*"
+        "https://instagram.com/*",
+        "https://*.instagram.com/*"
       ],
       "js": [
         "content.js"
