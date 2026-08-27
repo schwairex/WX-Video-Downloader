@@ -4,7 +4,7 @@
 
 **A lightweight, privacy-focused WebExtension built for my own browser workflow.**
 
-![Version](https://img.shields.io/badge/version-1.4.0-45A8FF?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-1.5.0-45A8FF?style=for-the-badge)
 ![Manifest](https://img.shields.io/badge/Manifest-MV3-5C6CF1?style=for-the-badge&logo=googlechrome&logoColor=white)
 ![Privacy](https://img.shields.io/badge/Privacy-Tracker--Free-28C889?style=for-the-badge&logo=proton&logoColor=white)
 ![Project](https://img.shields.io/badge/Project-Personal-8B5CF6?style=for-the-badge)
@@ -36,36 +36,54 @@ The project is designed around four principles:
 - **Simple installation** — load the extension and use it; no npm/setup script is
   required for normal use.
 
-## What's new in v1.4.0?
+## What's new in v1.5.0?
 
-### Instant download menu
+### Instagram download stability
 
-Previous releases opened a “Kaynak hazırlanıyor” state and then waited for the
-background service worker to return the media list.
+v1.5.0 separates Instagram's download path from slow pre-download validation.
 
-v1.4.0 changes that flow:
+When a quality is selected:
 
-1. X/Instagram media variants are detected while the post is visible.
-2. The content script keeps a small local variant cache.
-3. Every visible media control is **prewarmed** in the background.
-4. Clicking **İndir** renders already-known quality choices immediately.
-5. A background refresh can update the open menu without blocking its first
-   render.
+1. the exact selected media variant is sent to the background context,
+2. the browser's `downloads.download()` call is started immediately,
+3. Instagram media validation runs in parallel instead of blocking the native save flow,
+4. only a definitive non-media signature can cancel an invalid download,
+5. transient validation/network failures no longer prevent a valid download from starting.
 
-There are no intentional `150 ms` / `500 ms` waits in the normal menu path.
+This removes the delay that could occur before the browser's native save dialog
+appeared.
 
-### Zero-setup audio-only export
+### Resilient extension messaging
 
-The old optional MP3 setup dependency has been removed.
+Instagram is a single-page application and aggressively replaces/recycles DOM
+content while navigating Feed, Reels and Stories.
 
-**Sadece Ses** now works immediately after installation:
+v1.5.0 adds a reconnectable runtime Port between the in-page controls and the
+extension background context. If that channel is interrupted:
 
-- **AAC / ADTS at 192 kbps** when the browser exposes a compatible native
-  WebCodecs AAC encoder.
-- **Lossless WAV** automatically when native AAC encoding is unavailable.
+- the extension reconnects automatically,
+- the request is retried,
+- a normal one-shot runtime message is used as a compatibility fallback,
+- stale extension contexts after an update trigger one controlled page reload.
 
-No `setup-mp3.ps1`, `npm install`, external encoder download, or remote
-conversion website is required.
+This specifically targets intermittent errors such as:
+
+```text
+Could not establish connection. Receiving end does not exist.
+```
+
+### Cleaner UI
+
+The floating button and quality menu were simplified:
+
+- neutral dark surface,
+- reduced gradients and glow,
+- smaller typography,
+- tighter spacing,
+- softer borders,
+- simpler hover states,
+- less visual noise.
+
 
 ## Features
 

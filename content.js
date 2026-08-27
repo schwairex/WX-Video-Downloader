@@ -182,24 +182,227 @@
           best: index === 0,
           cleanSource: true,
           mediaType: wantedType,
-          source: item.source || "local"
+          source: item.source || "local",
+          sourcePriority: Number(item.sourcePriority || 0)
         };
       })
     };
   }
 
-  async function send(message) {
-    if (
-      !browserApi?.runtime
-        ?.sendMessage
-    ) {
-      throw new Error(
-        "Eklenti arka plan servisine erişilemiyor."
-      );
+  let backgroundPort = null;
+  let requestSequence = 0;
+  const portPending = new Map();
+
+  function runtimeErrorText() {
+    try {
+      return browserApi?.runtime?.lastError?.message || "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function connectionError(error) {
+    const text = String(error?.message || error || "");
+
+    return /receiving end does not exist|could not establish connection|message port closed|disconnected port|no tab with id/i.test(
+      text
+    );
+  }
+
+  function staleContextError(error) {
+    const text = String(error?.message || error || "");
+
+    return /extension context invalidated|context invalidated/i.test(text);
+  }
+
+  function clearPort(reason = null) {
+    const current = backgroundPort;
+    backgroundPort = null;
+
+    try {
+      current?.disconnect();
+    } catch (_) {}
+
+    if (reason) {
+      for (const [requestId, pending] of portPending) {
+        clearTimeout(pending.timer);
+        pending.reject(reason);
+        portPending.delete(requestId);
+      }
+    }
+  }
+
+  function connectBackgroundPort() {
+    if (backgroundPort) return backgroundPort;
+
+    if (!browserApi?.runtime?.connect) {
+      throw new Error("Eklenti arka plan bağlantısı kullanılamıyor.");
     }
 
-    return await browserApi.runtime
-      .sendMessage(message);
+    const port = browserApi.runtime.connect({
+      name: "pvd-control-v150"
+    });
+
+    port.onMessage.addListener((packet) => {
+      if (
+        packet?.type !== "PVD_RESPONSE" ||
+        !packet.requestId
+      ) {
+        return;
+      }
+
+      const pending = portPending.get(packet.requestId);
+      if (!pending) return;
+
+      clearTimeout(pending.timer);
+      portPending.delete(packet.requestId);
+      pending.resolve(packet.response);
+    });
+
+    port.onDisconnect.addListener(() => {
+      const message =
+        runtimeErrorText() ||
+        "Eklenti arka plan bağlantısı kesildi.";
+
+      if (backgroundPort === port) {
+        backgroundPort = null;
+      }
+
+      const error = new Error(message);
+
+      for (const [requestId, pending] of portPending) {
+        clearTimeout(pending.timer);
+        pending.reject(error);
+        portPending.delete(requestId);
+      }
+    });
+
+    backgroundPort = port;
+    return port;
+  }
+
+  function requestTimeoutFor(message) {
+    if (message?.type === "DOWNLOAD_SELECTED") {
+      // A browser configured to ask where each file is saved may leave the
+      // native save dialog open for a while. Do not treat that as a failure.
+      return 5 * 60 * 1000;
+    }
+
+    if (message?.type === "EXTRACT_AUDIO") {
+      return 5 * 60 * 1000;
+    }
+
+    return 8000;
+  }
+
+  function sendViaPort(message) {
+    const port = connectBackgroundPort();
+    const requestId =
+      `pvd_${Date.now()}_${++requestSequence}_${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        portPending.delete(requestId);
+        reject(new Error("Eklenti arka plan isteği zaman aşımına uğradı."));
+      }, requestTimeoutFor(message));
+
+      portPending.set(requestId, {
+        resolve,
+        reject,
+        timer
+      });
+
+      try {
+        port.postMessage({
+          type: "PVD_REQUEST",
+          requestId,
+          payload: message
+        });
+      } catch (error) {
+        clearTimeout(timer);
+        portPending.delete(requestId);
+        reject(error);
+      }
+    });
+  }
+
+  async function sendViaOneShot(message) {
+    if (!browserApi?.runtime?.sendMessage) {
+      throw new Error("Eklenti mesajlaşma API'si kullanılamıyor.");
+    }
+
+    return await browserApi.runtime.sendMessage(message);
+  }
+
+  function autoRecoverStaleContext(error) {
+    if (!staleContextError(error)) return false;
+
+    const key = "pvd_v150_context_recovery";
+    const now = Date.now();
+    const previous = Number(sessionStorage.getItem(key) || 0);
+
+    if (now - previous > 15000) {
+      sessionStorage.setItem(key, String(now));
+
+      setTimeout(() => {
+        location.reload();
+      }, 350);
+
+      return true;
+    }
+
+    return false;
+  }
+
+  async function send(message) {
+    let lastError = null;
+
+    // Primary path: persistent Port. Retry with a freshly-created Port once.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await sendViaPort(message);
+      } catch (error) {
+        lastError = error;
+        clearPort();
+
+        if (staleContextError(error)) {
+          autoRecoverStaleContext(error);
+          throw new Error("Eklenti güncellendi. Sayfa otomatik yenileniyor…");
+        }
+
+        if (!connectionError(error) && attempt === 0) {
+          break;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 40));
+      }
+    }
+
+    // Compatibility fallback: one-shot runtime message, also retried once for
+    // transient MV3 service-worker wake-up races.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await sendViaOneShot(message);
+      } catch (error) {
+        lastError = error;
+
+        if (staleContextError(error)) {
+          autoRecoverStaleContext(error);
+          throw new Error("Eklenti güncellendi. Sayfa otomatik yenileniyor…");
+        }
+
+        if (!connectionError(error)) break;
+
+        await new Promise((resolve) => setTimeout(resolve, 70));
+      }
+    }
+
+    throw new Error(
+      lastError?.message ||
+      "Eklenti arka plan servisine bağlanılamadı."
+    );
   }
 
   function platform() {
@@ -592,8 +795,8 @@
           ${buttonIconSvg()}
         </div>
         <div class="pvd-menu-head-copy">
-          <strong>${type === "image" ? "Hikâye Görseli" : "Medya İndir"}</strong>
-          <span>${type === "image" ? "Orijinal kalite • yerel indirme" : "Kaynak kalite • doğrulanmış medya"}</span>
+          <strong>${type === "image" ? "Görseli indir" : "İndirme seçenekleri"}</strong>
+          <span>${type === "image" ? "Orijinal kaynak" : "Kalite seç"}</span>
         </div>
         <span class="pvd-menu-platform">${platform() === "instagram" ? "IG" : "X"}</span>
       </div>
@@ -758,7 +961,7 @@
               <b>Sadece Ses</b>
               <em class="pvd-mp3-badge">AUDIO</em>
             </span>
-            <small>Kurulumsuz • AAC / WAV fallback</small>
+            <small>Ses dosyası olarak kaydet</small>
           </span>
         </span>
         <span class="pvd-option-action">♪</span>
@@ -777,7 +980,7 @@
 
     note.innerHTML = `
       <span class="pvd-clean-check">✓</span>
-      <span>${type === "image" ? "Görsel, tarayıcıya sunulan orijinal Story kaynağından indirilir." : "İndirmeden önce medya türü doğrulanır; geçersiz HTML/oturum yanıtı .mp4 olarak kaydedilmez."}</span>
+      <span>${type === "image" ? "Orijinal Story kaynağı" : "Doğrudan medya kaynağı"}</span>
     `;
 
     body.appendChild(note);
@@ -887,7 +1090,28 @@
             "DOWNLOAD_SELECTED",
           ...requestData(element),
           selectedUrl:
-            variant.url
+            variant.url,
+          selectedVariant: {
+            url: variant.url,
+            width: Number(variant.width || 0),
+            height: Number(variant.height || 0),
+            bitrate: Number(variant.bitrate || 0),
+            mediaType:
+              variant.mediaType ||
+              mediaType(element),
+            source:
+              variant.source ||
+              "ui-selected",
+            sourcePriority:
+              Number(
+                variant.sourcePriority ||
+                (variant.source === "video_versions"
+                  ? 120
+                  : variant.source === "video_url"
+                    ? 110
+                    : 95)
+              )
+          }
         });
 
       if (response?.ok) {

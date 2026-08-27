@@ -1,5 +1,74 @@
 # Changelog
 
+## [1.5.0] - 2026-08-27
+
+### Fixed — Instagram Download Stability
+- Fixed intermittent Instagram downloads failing with **“Could not establish connection. Receiving end does not exist.”**
+- Fixed cases where selecting an Instagram quality could silently do nothing.
+- Fixed cases where the browser's native save/download flow appeared much later than it did on X / Twitter.
+- Reworked the Instagram critical download path so media validation no longer blocks the initial `downloads.download()` call.
+- The exact variant selected in the quality menu is now sent directly to the background context together with its resolution/source metadata.
+- Removed extension-storage hydration from the critical path of a selected download.
+- Browser download initiation now happens immediately from the already-selected signed media URL.
+- Instagram media validation now runs **in parallel** after the browser download request has started.
+- Only definitive non-media file-signature failures can cancel a started Instagram download.
+- Temporary network, validation, CORS or CDN-check failures no longer cancel otherwise valid downloads.
+- Added safe same-media-family fallback candidates when a selected source is rejected by the browser.
+- Prevented Instagram feed fallbacks from accidentally selecting media from a different post when a shortcode is unavailable.
+
+### Fixed — Extension Messaging
+- Added a reconnectable long-lived runtime Port for page → background communication.
+- Added automatic reconnection when the background port disconnects.
+- Added request IDs and response correlation for Port messages.
+- Added one automatic Port retry for transient Manifest V3 service-worker wake-up races.
+- Added `runtime.sendMessage()` fallback for compatibility.
+- Added a second one-shot retry for transient **receiving end** / connection errors.
+- Added a lightweight `PING` request path for connection diagnostics.
+- Added controlled recovery for stale extension contexts after an unpacked-extension update.
+- Download/audio requests use a long timeout so a native save dialog being open is not treated as a failed extension request.
+
+### Performance / Reliability
+- Kept X / Twitter's already-working download path behavior intact.
+- Instagram no longer waits on a synchronous preflight fetch before the save flow begins.
+- Download validation remains available without sitting in front of the user's browser dialog.
+- Failed browser download initialization can fall back to another variant from the same media/post family.
+- Kept caches bounded and local.
+
+### UI / UX
+- Redesigned the floating **İndir** button with a simpler neutral dark appearance.
+- Reduced heavy gradients, glow and visual effects.
+- Reduced button height and padding.
+- Simplified the quality-menu surface.
+- Reduced menu width and visual density.
+- Simplified typography and secondary labels.
+- Reduced icon sizes and badge prominence.
+- Simplified hover states.
+- Simplified the bottom source-status note.
+- Simplified toast notifications.
+- Preserved responsive/mobile behavior.
+
+### Preserved
+- X / Twitter quality downloads.
+- Instagram Feed, Post and Reels downloads.
+- Instagram Story video downloads.
+- Instagram Story image downloads.
+- Audio-only AAC/WAV export.
+- Instagram source canonicalization.
+- Invalid-media protection.
+- Already-authorized private-profile support.
+- Clipboard URL detection.
+- Native download notifications.
+- Tracker-free / analytics-free architecture.
+- Cross-browser WebExtensions architecture.
+
+### Notes
+v1.5.0 is primarily a **stability release** for Instagram.
+
+The most important behavioral change is that Instagram's native browser download
+flow is now started first, while integrity validation happens independently in
+parallel. This makes the user interaction much closer to the already-stable
+X / Twitter download experience.
+
 ## [1.4.0] - 2026-08-27
 
 ### Fixed — Instant Quality Menu

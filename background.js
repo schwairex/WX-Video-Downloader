@@ -745,114 +745,256 @@ async function notify(title, message) {
   } catch (_) {}
 }
 
+
+function sameMediaFamily(candidate, payload, selectedItem) {
+  if (!candidate || candidate.platform !== payload.platform) return false;
+
+  const requestedMediaType =
+    payload.mediaType === "image" ? "image" : "video";
+
+  if (candidate.mediaType && candidate.mediaType !== requestedMediaType) {
+    return false;
+  }
+
+  if (payload.platform === "x") {
+    if (payload.mediaKey && candidate.mediaKey) {
+      return String(candidate.mediaKey) === String(payload.mediaKey);
+    }
+
+    if (payload.tweetId && candidate.tweetId) {
+      return String(candidate.tweetId) === String(payload.tweetId);
+    }
+
+    return candidate.url === selectedItem.url;
+  }
+
+  if (payload.platform === "instagram") {
+    if (payload.postKey && candidate.postKey) {
+      return String(candidate.postKey) === String(payload.postKey);
+    }
+
+    // Feed items do not always expose a shortcode immediately. Do not fall
+    // back to an unrelated recently-seen Instagram post in that situation.
+    return candidate.url === selectedItem.url;
+  }
+
+  return false;
+}
+
+async function startBrowserDownload(url, filename) {
+  if (!browserApi?.downloads?.download) {
+    throw new Error("Tarayıcının indirme API'si kullanılamıyor.");
+  }
+
+  const baseOptions = {
+    url,
+    filename,
+    saveAs: false
+  };
+
+  try {
+    return await browserApi.downloads.download({
+      ...baseOptions,
+      conflictAction: "uniquify"
+    });
+  } catch (error) {
+    // Some WebExtension implementations expose downloads.download but not
+    // every Chromium option. Retry once with the smallest portable payload.
+    const text = String(error?.message || error || "");
+
+    if (
+      /conflictAction|unexpected property|invalid value|not supported/i.test(text)
+    ) {
+      return await browserApi.downloads.download(baseOptions);
+    }
+
+    throw error;
+  }
+}
+
+function isDefinitiveInvalidMedia(validation) {
+  return Boolean(
+    validation &&
+    validation.ok === false &&
+    [
+      "INVALID_IMAGE_SOURCE",
+      "INVALID_VIDEO_SOURCE"
+    ].includes(validation.code)
+  );
+}
+
+async function cancelInvalidDownload(downloadId, validation) {
+  if (!Number.isInteger(downloadId)) return;
+
+  try {
+    await browserApi.downloads.cancel(downloadId);
+  } catch (_) {}
+
+  try {
+    await browserApi.downloads.erase({ id: downloadId });
+  } catch (_) {}
+
+  await notify(
+    "Geçersiz medya engellendi",
+    validation?.message ||
+      "Instagram geçerli bir medya dosyası döndürmedi."
+  );
+}
+
+function validateInstagramDownloadInBackground(downloadIdPromise, url, mediaType) {
+  // The validation request intentionally does NOT block downloads.download().
+  // This makes the browser's save/open flow start immediately.
+  const validationPromise = validateRemoteMedia(url, mediaType)
+    .catch(() => null);
+
+  void Promise.allSettled([
+    Promise.resolve(downloadIdPromise),
+    validationPromise
+  ]).then(async ([downloadResult, validationResult]) => {
+    if (
+      downloadResult.status !== "fulfilled" ||
+      validationResult.status !== "fulfilled"
+    ) {
+      return;
+    }
+
+    const validation = validationResult.value;
+
+    // Network/CORS/timeouts are not enough evidence to cancel a download.
+    // Only a definitive "this is not media" signature result is destructive.
+    if (isDefinitiveInvalidMedia(validation)) {
+      await cancelInvalidDownload(downloadResult.value, validation);
+    }
+  });
+}
+
 async function downloadSelected(tabId, payload) {
-  const selectedUrl = payload.selectedUrl;
+  const selectedUrl = normalizeUrl(
+    payload.selectedUrl || "",
+    payload.platform
+  );
+
   const requestedMediaType =
     payload.mediaType === "image"
       ? "image"
       : "video";
 
-  if (
-    !selectedUrl ||
-    !isAllowedMediaUrl(selectedUrl)
-  ) {
+  if (!selectedUrl || !isAllowedMediaUrl(selectedUrl)) {
     return {
       ok: false,
+      code: "INVALID_URL",
       message: "Geçersiz medya adresi."
     };
   }
 
-  const store = await hydrateTab(tabId);
-  const item =
-    store.find(
-      (candidate) =>
-        candidate.url ===
-        normalizeUrl(selectedUrl, payload.platform)
-    ) ||
+  // v1.5.0 critical path: never wait for storage hydration before opening the
+  // browser download flow. The exact selected variant is sent by content.js.
+  const selectedVariant =
+    payload.selectedVariant &&
+    payload.selectedVariant.url === payload.selectedUrl
+      ? payload.selectedVariant
+      : {};
+
+  const memoryStore = cleanStore(memoryMedia.get(tabId) || []);
+
+  const memoryItem = memoryStore.find(
+    (candidate) =>
+      normalizeUrl(candidate.url, candidate.platform) === selectedUrl
+  );
+
+  const selectedItem =
+    memoryItem ||
     normalizeVariant({
       ...payload,
+      ...selectedVariant,
       url: selectedUrl,
-      mediaType: requestedMediaType
+      mediaType: requestedMediaType,
+      source:
+        selectedVariant.source ||
+        "selected",
+      sourcePriority:
+        Number(selectedVariant.sourcePriority || 95)
     });
 
-  if (!item) {
+  if (!selectedItem) {
     return {
       ok: false,
+      code: "NO_MEDIA",
       message: "Medya kaynağı bulunamadı."
     };
   }
 
   if (
     requestedMediaType === "video" &&
-    !isVideoCandidate(item)
+    !isVideoCandidate(selectedItem)
   ) {
     return {
       ok: false,
-      message:
-        "Doğrudan indirilebilir video kaynağı bulunamadı."
+      code: "NOT_VIDEO",
+      message: "Seçilen kaynak indirilebilir video değil."
     };
   }
 
   if (
     requestedMediaType === "image" &&
-    !isImageCandidate(item)
+    !isImageCandidate(selectedItem)
   ) {
     return {
       ok: false,
-      message:
-        "Doğrudan indirilebilir görsel kaynağı bulunamadı."
+      code: "NOT_IMAGE",
+      message: "Seçilen kaynak indirilebilir görsel değil."
     };
   }
 
-  let finalUrl = normalizeUrl(
-    item.url,
-    payload.platform
-  );
+  const selectedResolution = resolution(selectedItem);
 
-  let validation = {
-    ok: true,
-    url: finalUrl,
-    contentType: item.contentType || ""
-  };
+  // Exact source first. Alternates are restricted to the same post/media
+  // family and are only used if the browser rejects the first download call.
+  const familyAlternates = memoryStore
+    .filter((candidate) =>
+      sameMediaFamily(candidate, payload, selectedItem)
+    )
+    .filter((candidate) =>
+      requestedMediaType === "image"
+        ? isImageCandidate(candidate)
+        : isVideoCandidate(candidate)
+    )
+    .sort((a, b) => {
+      const ar = resolution(a);
+      const br = resolution(b);
 
-  // Instagram URLs are signed and may originate from partial player
-  // requests. Validate bytes before creating a file with .mp4/.jpg.
-  if (payload.platform === "instagram") {
-    validation = await validateRemoteMedia(
-      finalUrl,
-      requestedMediaType
-    );
+      const selectedPixels =
+        selectedResolution.width * selectedResolution.height;
 
-    if (!validation.ok) {
-      await notify(
-        "Instagram medyası doğrulanamadı",
-        validation.message
+      const aDistance =
+        selectedPixels && ar.width && ar.height
+          ? Math.abs(ar.width * ar.height - selectedPixels)
+          : Number.MAX_SAFE_INTEGER;
+
+      const bDistance =
+        selectedPixels && br.width && br.height
+          ? Math.abs(br.width * br.height - selectedPixels)
+          : Number.MAX_SAFE_INTEGER;
+
+      return (
+        aDistance - bDistance ||
+        candidateScore(b) - candidateScore(a)
       );
+    });
 
-      return validation;
+  const candidateMap = new Map();
+  for (const candidate of [selectedItem, ...familyAlternates]) {
+    if (!candidate?.url) continue;
+    const normalized = normalizeUrl(candidate.url, payload.platform);
+    if (!candidateMap.has(normalized)) {
+      candidateMap.set(normalized, {
+        ...candidate,
+        url: normalized
+      });
     }
-
-    finalUrl = validation.url;
   }
 
-  const { width, height } = resolution(item);
-  const quality =
-    width && height
-      ? `${width}x${height}`
-      : qualityLabel(item);
-
-  let fallbackExtension =
-    requestedMediaType === "image"
-      ? "jpg"
-      : /\.webm(?:\?|$)/i.test(finalUrl)
-        ? "webm"
-        : "mp4";
-
-  const fileExtension =
-    extensionFromContentType(
-      validation.contentType,
-      fallbackExtension
-    );
+  const candidates = [...candidateMap.values()].slice(0, 4);
 
   const username = sanitize(
     payload.username,
@@ -873,72 +1015,101 @@ async function downloadSelected(tabId, payload) {
     fallbackId
   );
 
-  const dimensions =
-    width && height
-      ? `_${width}x${height}`
-      : "";
+  let lastError = null;
 
-  let folder =
-    payload.platform === "instagram"
-      ? "Instagram-Videos"
-      : "X-Videos";
+  for (const candidate of candidates) {
+    const finalUrl = normalizeUrl(candidate.url, payload.platform);
+    const { width, height } = resolution(candidate);
 
-  if (
-    payload.platform === "instagram" &&
-    payload.contentKind === "story"
-  ) {
-    folder =
+    const quality =
+      width && height
+        ? `${width}x${height}`
+        : qualityLabel(candidate);
+
+    const fallbackExtension =
       requestedMediaType === "image"
-        ? "Instagram-Stories/Images"
-        : "Instagram-Stories/Videos";
-  }
+        ? "jpg"
+        : /\.webm(?:\?|$)/i.test(finalUrl)
+          ? "webm"
+          : "mp4";
 
-  const filename =
-    `${folder}/${username}_${id}${dimensions}.${fileExtension}`;
+    const fileExtension = extensionFromContentType(
+      candidate.contentType || "",
+      fallbackExtension
+    );
 
-  try {
-    if (!browserApi?.downloads?.download) {
-      return {
-        ok: false,
-        message:
-          "Tarayıcının indirme API'si kullanılamıyor."
-      };
+    const dimensions =
+      width && height
+        ? `_${width}x${height}`
+        : "";
+
+    let folder =
+      payload.platform === "instagram"
+        ? "Instagram-Videos"
+        : "X-Videos";
+
+    if (
+      payload.platform === "instagram" &&
+      payload.contentKind === "story"
+    ) {
+      folder =
+        requestedMediaType === "image"
+          ? "Instagram-Stories/Images"
+          : "Instagram-Stories/Videos";
     }
 
-    const downloadId =
-      await browserApi.downloads.download({
-        url: finalUrl,
+    const filename =
+      `${folder}/${username}_${id}${dimensions}.${fileExtension}`;
+
+    try {
+      // Call downloads.download immediately. This is the important v1.5.0
+      // change: Instagram validation no longer sits in front of the save flow.
+      const downloadIdPromise =
+        startBrowserDownload(finalUrl, filename);
+
+      if (payload.platform === "instagram") {
+        validateInstagramDownloadInBackground(
+          downloadIdPromise,
+          finalUrl,
+          requestedMediaType
+        );
+      }
+
+      const downloadId = await downloadIdPromise;
+
+      return {
+        ok: true,
+        downloadId,
         filename,
-        saveAs: false,
-        conflictAction: "uniquify"
-      });
-
-    return {
-      ok: true,
-      downloadId,
-      filename,
-      quality,
-      mediaType: requestedMediaType
-    };
-  } catch (error) {
-    console.error(
-      "[PVD] download failed",
-      error
-    );
-
-    await notify(
-      "İndirme başlatılamadı",
-      error?.message ||
-        "Ağ veya tarayıcı kaynaklı bir hata oluştu."
-    );
-
-    return {
-      ok: false,
-      message:
-        error?.message ||
-        "İndirme başlatılamadı."
-    };
+        quality,
+        mediaType: requestedMediaType,
+        source:
+          candidate.source || "unknown"
+      };
+    } catch (error) {
+      lastError = error;
+      console.warn(
+        "[PVD] candidate download failed; trying safe alternate",
+        candidate.source,
+        error
+      );
+    }
   }
+
+  const message =
+    lastError?.message ||
+    "İndirme başlatılamadı.";
+
+  await notify(
+    "İndirme başlatılamadı",
+    message
+  );
+
+  return {
+    ok: false,
+    code: "DOWNLOAD_FAILED",
+    message
+  };
 }
 
 async function ensureOffscreen() {
@@ -1175,111 +1346,172 @@ browserApi.webRequest.onBeforeRequest.addListener(
   }
 );
 
+
+async function dispatchRuntimeRequest(message, tabId) {
+  if (message?.type === "PING") {
+    return {
+      ok: true,
+      version: "1.5.0",
+      now: Date.now()
+    };
+  }
+
+  if (message?.type === "CACHE_VARIANTS") {
+    if (
+      Number.isInteger(tabId) &&
+      Array.isArray(message.variants)
+    ) {
+      for (const variant of message.variants) {
+        addMedia(tabId, variant);
+      }
+    }
+
+    return { ok: true };
+  }
+
+  if (message?.type === "GET_VARIANTS") {
+    if (!Number.isInteger(tabId)) {
+      return {
+        ok: false,
+        message: "Aktif sekme bulunamadı."
+      };
+    }
+
+    return await getVariants(tabId, message);
+  }
+
+  if (message?.type === "DOWNLOAD_SELECTED") {
+    if (!Number.isInteger(tabId)) {
+      return {
+        ok: false,
+        message: "Aktif sekme bulunamadı."
+      };
+    }
+
+    return await downloadSelected(tabId, message);
+  }
+
+  if (message?.type === "EXTRACT_AUDIO") {
+    if (!Number.isInteger(tabId)) {
+      return {
+        ok: false,
+        message: "Aktif sekme bulunamadı."
+      };
+    }
+
+    return await extractAudio(tabId, message);
+  }
+
+  if (message?.type === "OPEN_URL") {
+    try {
+      await browserApi.tabs.create({ url: message.url });
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error?.message || "Sekme açılamadı."
+      };
+    }
+  }
+
+  if (message?.type === "GET_ACTIVE_TAB") {
+    try {
+      const tabs = await browserApi.tabs.query({
+        active: true,
+        currentWindow: true
+      });
+
+      return {
+        ok: true,
+        tab: tabs[0] || null
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error?.message || "Aktif sekme alınamadı."
+      };
+    }
+  }
+
+  return {
+    ok: false,
+    code: "UNKNOWN_REQUEST",
+    message: "Bilinmeyen eklenti isteği."
+  };
+}
+
 browserApi.runtime.onMessage.addListener(
   (message, sender, sendResponse) => {
     const tabId =
       sender.tab?.id ??
       message?.tabId;
 
-    if (message?.type === "CACHE_VARIANTS") {
-      if (
-        Number.isInteger(tabId) &&
-        Array.isArray(message.variants)
-      ) {
-        for (const variant of message.variants) {
-          addMedia(tabId, variant);
-        }
-      }
+    Promise.resolve(
+      dispatchRuntimeRequest(message, tabId)
+    )
+      .then(sendResponse)
+      .catch((error) =>
+        sendResponse({
+          ok: false,
+          code: "BACKGROUND_ERROR",
+          message:
+            error?.message ||
+            "Eklenti arka planında beklenmeyen bir hata oluştu."
+        })
+      );
 
-      sendResponse({ ok: true });
+    return true;
+  }
+);
+
+// v1.5.0: a reconnectable long-lived channel is the primary transport for
+// in-page controls. Instagram is a SPA and can recycle large parts of its DOM;
+// using a Port plus retry logic avoids transient "Receiving end does not exist"
+// failures seen with one-shot messages.
+browserApi.runtime.onConnect.addListener((port) => {
+  if (port.name !== "pvd-control-v150") return;
+
+  port.onMessage.addListener((packet) => {
+    if (
+      packet?.type !== "PVD_REQUEST" ||
+      !packet.requestId
+    ) {
       return;
     }
 
-    if (message?.type === "GET_VARIANTS") {
-      if (!Number.isInteger(tabId)) {
-        sendResponse({
-          ok: false,
-          message: "Aktif sekme bulunamadı."
-        });
-        return;
-      }
+    const tabId =
+      port.sender?.tab?.id ??
+      packet.payload?.tabId;
 
-      getVariants(tabId, message)
-        .then(sendResponse);
-      return true;
-    }
-
-    if (
-      message?.type === "DOWNLOAD_SELECTED"
-    ) {
-      if (!Number.isInteger(tabId)) {
-        sendResponse({
-          ok: false,
-          message: "Aktif sekme bulunamadı."
-        });
-        return;
-      }
-
-      downloadSelected(tabId, message)
-        .then(sendResponse);
-      return true;
-    }
-
-    if (message?.type === "EXTRACT_AUDIO") {
-      if (!Number.isInteger(tabId)) {
-        sendResponse({
-          ok: false,
-          message: "Aktif sekme bulunamadı."
-        });
-        return;
-      }
-
-      extractAudio(tabId, message)
-        .then(sendResponse);
-      return true;
-    }
-
-    if (message?.type === "OPEN_URL") {
-      browserApi.tabs
-        .create({ url: message.url })
-        .then(() =>
-          sendResponse({ ok: true })
-        )
-        .catch((error) =>
-          sendResponse({
-            ok: false,
-            message: error.message
-          })
-        );
-
-      return true;
-    }
-
-    if (
-      message?.type === "GET_ACTIVE_TAB"
-    ) {
-      browserApi.tabs
-        .query({
-          active: true,
-          currentWindow: true
-        })
-        .then((tabs) =>
-          sendResponse({
-            ok: true,
-            tab: tabs[0] || null
-          })
-        )
-        .catch((error) =>
-          sendResponse({
-            ok: false,
-            message: error.message
-          })
-        );
-
-      return true;
-    }
-  }
-);
+    Promise.resolve(
+      dispatchRuntimeRequest(packet.payload, tabId)
+    )
+      .then((response) => {
+        try {
+          port.postMessage({
+            type: "PVD_RESPONSE",
+            requestId: packet.requestId,
+            response
+          });
+        } catch (_) {}
+      })
+      .catch((error) => {
+        try {
+          port.postMessage({
+            type: "PVD_RESPONSE",
+            requestId: packet.requestId,
+            response: {
+              ok: false,
+              code: "BACKGROUND_ERROR",
+              message:
+                error?.message ||
+                "Eklenti arka planında beklenmeyen bir hata oluştu."
+            }
+          });
+        } catch (_) {}
+      });
+  });
+});
 
 browserApi.tabs?.onRemoved?.addListener(
   async (tabId) => {
