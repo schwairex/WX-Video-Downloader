@@ -1,70 +1,204 @@
 # Personal X & Instagram Video Downloader
 
-> Personal / experimental project for my own browser workflow. No analytics, no remote download API, no tracking.
+> **Personal / experimental browser-extension project.**  
+> This repository is a small WebExtension I built for my own browser workflow and for learning browser-extension development. It is not an official X, Twitter, Meta, or Instagram product.
 
-## v1.3.2
+A privacy-focused browser extension for downloading accessible media from X and Instagram without sending media to a third-party downloader service.
 
-This release rebuilds the interaction and media-cache path after the v1.3.x download regression. The download UI now handles clicks at the window capture layer, opens the quality panel immediately, re-scans page media on demand, and keeps a small short-lived per-tab media cache so Manifest V3 service-worker suspension does not erase all detected variants.
+## v1.3.3
 
-### Highlights
-- X / Twitter video downloads restored.
-- Instagram video/Reels downloads restored.
-- Instagram Story video support for stories already visible to the logged-in user.
-- Active-session support for private profiles the user can already view. The extension does not bypass access controls or request private content the account cannot access.
-- Raw/original media download: the extension does not add a platform watermark or UI overlay. Watermarks already embedded by the creator remain part of the source file.
-- Modern dark popup UI.
-- Clipboard URL detection when the popup is opened.
-- OS download-complete / interrupted notifications.
-- Tracker-free short-lived media cache.
-- Optional local MP3 audio extraction.
+v1.3.3 focuses on **Instagram download integrity**, a cleaner UI, and Story image support.
 
-## Important: MP3 setup
-True MP3 encoding is not provided natively by all major browsers. To keep the extension private and avoid uploading media to an external conversion service, MP3 encoding is performed locally with `@breezystack/lamejs`.
+### Main fixes
 
-On Windows run once:
+- Instagram player byte-range URLs are now normalized before download.
+- `bytestart`, `byteend`, and similar partial-range query parameters are removed before a source is treated as a full downloadable file.
+- Instagram media is validated before the browser is allowed to save it as `.mp4` or an image.
+- The extension checks the response MIME type and the beginning of the file for common MP4/WebM/image signatures.
+- HTML/session/error responses are rejected instead of being saved as corrupted `.mp4` files.
+- Instagram API/Relay `video_versions` sources are prioritized over raw observed player requests.
+- DASH-init/audio-only MP4 URLs are filtered out of the normal video quality list.
+- Duplicate unknown “Orijinal” entries were reduced.
+
+### Instagram Stories
+
+- Story videos continue to use the normal video downloader.
+- Large Story images now receive their own **Görseli İndir** control.
+- `image_versions2.candidates` Story image sources are detected when available.
+- Visible Story image URLs can also be used as a direct source.
+- Story images are saved under:
+
+```text
+Downloads/Instagram-Stories/Images/
+```
+
+Story videos are saved under:
+
+```text
+Downloads/Instagram-Stories/Videos/
+```
+
+## Modern UI
+
+The in-page UI was redesigned again for v1.3.3:
+
+- cleaner floating button,
+- compact glass/dark appearance,
+- SVG icons instead of text-only symbols,
+- clearer hierarchy,
+- platform badge,
+- separate video/image menu states,
+- more polished loading state,
+- improved error state,
+- compact quality cards,
+- cleaner MP3 action,
+- more subtle success/error toast notifications.
+
+## Why the Instagram download pipeline changed
+
+Instagram can request only a portion of a media file during playback. These URLs may contain parameters such as:
+
+```text
+bytestart=...
+byteend=...
+```
+
+Saving one of those partial requests directly as `something.mp4` can create a truncated file that Windows cannot open.
+
+v1.3.3 therefore:
+
+1. prefers progressive media URLs exposed by Instagram's page/API data,
+2. canonicalizes Instagram CDN URLs,
+3. removes playback-only byte-range query parameters,
+4. rejects DASH initialization/audio-only sources from normal video downloads,
+5. performs a small pre-download validation request,
+6. only starts the final browser download when the source looks like real video/image data.
+
+## Browser support
+
+The project continues to target the WebExtensions ecosystem:
+
+- Google Chrome
+- Brave
+- Microsoft Edge
+- Opera
+- Vivaldi
+- Firefox
+- Safari WebExtension source compatibility
+
+Browser stores and Safari still use their own signing/package/distribution workflows.
+
+## Features
+
+### X / Twitter
+
+- Floating download button.
+- Quality menu.
+- MP4/WebM variants.
+- Local MP3 extraction option.
+- Native download notifications.
+
+### Instagram
+
+- Feed video support.
+- Video post support.
+- Reels support.
+- Story video support.
+- **Story image support.**
+- Private-profile media that the active browser session is already authorized to view.
+- Clean source download: the extension does not add a platform/UI watermark.
+- Local MP3 extraction for videos.
+- Pre-download media validation.
+- Instagram CDN request context improvements.
+
+## Privacy
+
+- No analytics.
+- No tracker.
+- No remote downloader service.
+- No remote MP3 conversion API.
+- No account credentials are exported.
+- No private-profile access-control bypass.
+- No continuous clipboard polling.
+- Temporary media cache is local to the browser extension.
+- MP3 processing is local and starts only after explicit user action.
+
+## Installation
+
+### Chromium browsers
+
+1. Download or clone the project.
+2. Open the browser extension page.
+3. Enable **Developer mode**.
+4. Choose **Load unpacked**.
+5. Select the folder that contains `manifest.json`.
+6. Reload any open X / Instagram tabs.
+
+Examples:
+
+- Chrome: `chrome://extensions`
+- Brave: `brave://extensions`
+- Edge: `edge://extensions`
+- Vivaldi: `vivaldi://extensions`
+
+### Firefox
+
+For temporary development/testing:
+
+1. Open `about:debugging#/runtime/this-firefox`.
+2. Select **Load Temporary Add-on**.
+3. Select `manifest.json`.
+4. Reload X / Instagram.
+
+## Optional MP3 setup
+
+The extension includes optional local MP3 extraction support.
+
+Windows:
+
 ```powershell
 .\setup-mp3.ps1
 ```
-Then reload the extension. The script installs the encoder into `vendor/`; the extension never downloads executable code at runtime. The encoder is LGPL-3.0 and its license file is copied alongside it.
 
-## Browser support
-The main code follows the WebExtensions API model. Chromium browsers use the MV3 service worker. Firefox/Safari may require manifest packaging adjustments for store distribution; local/source compatibility remains best-effort.
+macOS / Linux:
 
-## Instagram Stories and private profiles
-The extension only works with media the current browser session has already been authorized to view and load. It does not discover, unlock, or bypass private content. For Stories, open the Story normally; when its video is visible, the same floating download control appears.
+```bash
+./setup-mp3.sh
+```
 
-## Clipboard behavior
-The popup reads the clipboard only when the extension popup is opened and only treats X/Twitter/Instagram media URLs as relevant. Unrelated clipboard text is ignored and is not uploaded anywhere.
+Then reload the extension.
 
-## Privacy / performance
-- no analytics
-- no remote downloader API
-- no background clipboard polling
-- no cookie export
-- no private-profile bypass
-- short-lived tab media cache (12 minutes, capped)
-- media/audio processing only starts after user action
+## Project structure
 
-## Files
 ```text
-manifest.json
-background.js
-page-hook.js
-content.js
-content.css
-popup.html
-popup.js
-popup.css
-audio.html
-audio.js
-icons/
-vendor/
-setup-mp3.ps1
-setup-mp3.sh
-CHANGELOG.md
+personal-social-video-downloader/
+├── manifest.json
+├── rules.json
+├── background.js
+├── page-hook.js
+├── content.js
+├── content.css
+├── popup.html
+├── popup.css
+├── popup.js
+├── audio.html
+├── audio.js
+├── README.md
+├── CHANGELOG.md
+├── THIRD_PARTY_NOTICES.md
+├── setup-mp3.ps1
+├── setup-mp3.sh
+└── icons/
 ```
 
 ## Responsible use
-Only download media you have permission to save or use. Access to a post does not automatically grant redistribution rights.
 
-This project is not affiliated with X Corp., Meta Platforms, Inc., or Instagram.
+Use this project only for content you are permitted to download, store, or use. The extension does not bypass access controls; private-account support only applies to media that the current logged-in browser session can already view.
+
+## Trademark / affiliation notice
+
+This project is not affiliated with, endorsed by, or sponsored by X Corp., Meta Platforms, Inc., or Instagram. Product and brand names belong to their respective owners.
+
+---
+
+Built for my own browser workflow and learning.

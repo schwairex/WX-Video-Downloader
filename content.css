@@ -1,1 +1,541 @@
-:root{--pvd-bg:#0b0f16;--pvd-panel:rgba(13,18,27,.96);--pvd-text:#f7f9fc;--pvd-muted:#8e9aab;--pvd-accent:#4aa8ff;--pvd-green:#26c281}.pvd-overlay-portal{position:fixed;z-index:2147483646;pointer-events:none;transform:translateX(-100%);opacity:0;visibility:hidden;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.pvd-overlay-visible{opacity:1;visibility:visible}.pvd-overlay-button{pointer-events:auto!important;min-height:40px;padding:0 14px;border:1px solid rgba(255,255,255,.16);border-radius:999px;background:linear-gradient(180deg,rgba(25,31,42,.96),rgba(11,15,22,.94));color:#fff;display:flex;align-items:center;gap:8px;font:700 13px/1 inherit;cursor:pointer!important;box-shadow:0 10px 30px rgba(0,0,0,.32),inset 0 1px rgba(255,255,255,.06);backdrop-filter:blur(16px);transition:.16s}.pvd-overlay-button:hover{background:linear-gradient(180deg,#249df0,#1477ba);transform:translateY(-1px);box-shadow:0 13px 34px rgba(0,0,0,.36),0 0 0 4px rgba(36,157,240,.14)}.pvd-overlay-button[data-state=loading]{opacity:.72}.pvd-overlay-button[data-state=done]{background:linear-gradient(180deg,#24c98b,#139966)}.pvd-download-icon{font-size:19px;line-height:1}.pvd-chevron{opacity:.7}.pvd-quality-menu{pointer-events:auto!important;position:absolute;right:0;top:48px;width:250px;border:1px solid rgba(255,255,255,.1);border-radius:18px;background:var(--pvd-panel);color:var(--pvd-text);overflow:hidden;box-shadow:0 22px 60px rgba(0,0,0,.48);backdrop-filter:blur(22px);opacity:0;transform:translateY(-5px) scale(.98);transition:.14s}.pvd-quality-menu-show{opacity:1;transform:none}.pvd-menu-head{padding:13px 14px 10px;border-bottom:1px solid rgba(255,255,255,.06)}.pvd-menu-head strong{display:block;font-size:13px}.pvd-menu-head span{display:block;margin-top:3px;color:var(--pvd-muted);font-size:10px}.pvd-loading{padding:18px 14px;display:flex;align-items:center;gap:10px;color:var(--pvd-muted);font-size:12px}.pvd-loading i{width:14px;height:14px;border:2px solid rgba(255,255,255,.15);border-top-color:var(--pvd-accent);border-radius:50%;animation:pvdspin .8s linear infinite}@keyframes pvdspin{to{transform:rotate(360deg)}}.pvd-quality-option,.pvd-audio-option,.pvd-menu-retry{width:100%;border:0;border-bottom:1px solid rgba(255,255,255,.055);background:transparent;color:inherit;padding:11px 14px;display:flex;justify-content:space-between;align-items:center;text-align:left;cursor:pointer!important}.pvd-quality-option:hover,.pvd-audio-option:hover,.pvd-menu-retry:hover{background:rgba(74,168,255,.12)}.pvd-quality-option span,.pvd-audio-option span{display:flex;align-items:center;gap:7px}.pvd-quality-option b,.pvd-audio-option b{font-size:12px}.pvd-quality-option em,.pvd-audio-option em{font-style:normal;font-size:8px;font-weight:900;padding:3px 6px;border-radius:999px;background:rgba(74,168,255,.16);color:#73bcff}.pvd-quality-option small,.pvd-audio-option small{color:var(--pvd-muted);font-size:9px}.pvd-audio-option em{background:rgba(190,97,255,.17);color:#d79cff}.pvd-clean-note{padding:9px 13px 11px;color:#6f7c8e;font-size:9px;line-height:1.4}.pvd-menu-error{padding:14px;color:#ffb4bd;font-size:11px;line-height:1.45}.pvd-menu-retry{justify-content:center;color:#8dccff;font-weight:800;font-size:11px}.pvd-toast{position:fixed;z-index:2147483647;right:22px;bottom:22px;max-width:min(420px,calc(100vw - 44px));padding:12px 16px;border:1px solid rgba(255,255,255,.09);border-radius:14px;color:#fff;background:rgba(11,15,22,.96);font:650 13px/1.35 Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;box-shadow:0 16px 42px rgba(0,0,0,.35);opacity:0;transform:translateY(8px);transition:.18s;pointer-events:none}.pvd-toast-show{opacity:1;transform:none}.pvd-toast-success{border-color:rgba(38,194,129,.25)}.pvd-toast-error{border-color:rgba(255,82,103,.28)}@media(max-width:640px){.pvd-overlay-button{min-height:36px;padding:0 10px}.pvd-button-label{display:none}.pvd-quality-menu{top:44px;width:230px}}
+:root {
+  --pvd-bg: #090d14;
+  --pvd-panel: rgba(12, 17, 26, 0.965);
+  --pvd-panel-2: rgba(18, 25, 37, 0.96);
+  --pvd-border: rgba(255, 255, 255, 0.085);
+  --pvd-border-strong: rgba(255, 255, 255, 0.14);
+  --pvd-text: #f6f8fb;
+  --pvd-muted: #8995a8;
+  --pvd-muted-2: #657185;
+  --pvd-accent: #45a8ff;
+  --pvd-accent-2: #1c82df;
+  --pvd-green: #28c889;
+  --pvd-purple: #c07cff;
+  --pvd-danger: #ff7080;
+}
+
+.pvd-overlay-portal {
+  position: fixed;
+  z-index: 2147483646;
+  pointer-events: none;
+  transform: translateX(-100%);
+  opacity: 0;
+  visibility: hidden;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  transition:
+    opacity 120ms ease,
+    visibility 120ms ease;
+}
+
+.pvd-overlay-visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.pvd-overlay-button {
+  pointer-events: auto !important;
+  min-height: 42px;
+  padding: 0 14px 0 13px;
+  border: 1px solid var(--pvd-border-strong);
+  border-radius: 14px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(29, 37, 51, 0.96),
+      rgba(11, 16, 24, 0.96)
+    );
+  color: var(--pvd-text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 760 13px/1 inherit;
+  letter-spacing: -0.01em;
+  cursor: pointer !important;
+  box-shadow:
+    0 12px 34px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 rgba(255, 255, 255, 0.075);
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+  transition:
+    transform 150ms ease,
+    border-color 150ms ease,
+    background 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.pvd-overlay-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(91, 181, 255, 0.45);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(47, 147, 230, 0.98),
+      rgba(19, 100, 174, 0.98)
+    );
+  box-shadow:
+    0 15px 38px rgba(0, 0, 0, 0.4),
+    0 0 0 4px rgba(69, 168, 255, 0.12);
+}
+
+.pvd-overlay-button:active {
+  transform: scale(0.97);
+}
+
+.pvd-overlay-button[data-state="loading"] {
+  opacity: 0.72;
+}
+
+.pvd-overlay-button[data-state="done"] {
+  border-color: rgba(40, 200, 137, 0.4);
+  background:
+    linear-gradient(
+      180deg,
+      #2ccf91,
+      #159665
+    );
+}
+
+.pvd-download-icon,
+.pvd-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pvd-download-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.pvd-download-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.pvd-chevron {
+  width: 14px;
+  height: 14px;
+  opacity: 0.66;
+}
+
+.pvd-chevron svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.pvd-quality-menu {
+  pointer-events: auto !important;
+  position: absolute;
+  right: 0;
+  top: 50px;
+  width: 300px;
+  overflow: hidden;
+  border: 1px solid var(--pvd-border);
+  border-radius: 22px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(16, 22, 33, 0.985),
+      rgba(9, 13, 20, 0.985)
+    );
+  color: var(--pvd-text);
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.52),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  backdrop-filter: blur(26px) saturate(140%);
+  -webkit-backdrop-filter: blur(26px) saturate(140%);
+  opacity: 0;
+  transform: translateY(-7px) scale(0.975);
+  transform-origin: top right;
+  transition:
+    opacity 150ms ease,
+    transform 150ms ease;
+}
+
+.pvd-quality-menu-show {
+  opacity: 1;
+  transform: none;
+}
+
+.pvd-menu-head {
+  min-height: 64px;
+  padding: 13px 14px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.025),
+      transparent
+    );
+}
+
+.pvd-menu-head-icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(69, 168, 255, 0.18);
+  border-radius: 11px;
+  color: #7bc4ff;
+  background: rgba(69, 168, 255, 0.09);
+}
+
+.pvd-menu-head-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.pvd-menu-head-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.pvd-menu-head-copy strong {
+  display: block;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 780;
+  letter-spacing: -0.01em;
+}
+
+.pvd-menu-head-copy span {
+  display: block;
+  margin-top: 4px;
+  color: var(--pvd-muted);
+  font-size: 9.5px;
+  font-weight: 540;
+}
+
+.pvd-menu-platform {
+  flex: 0 0 auto;
+  min-width: 26px;
+  padding: 5px 7px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+  color: #a8b4c5;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-align: center;
+}
+
+.pvd-loading {
+  min-height: 82px;
+  padding: 17px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pvd-loading i {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-top-color: var(--pvd-accent);
+  border-radius: 50%;
+  animation: pvdspin 0.75s linear infinite;
+}
+
+.pvd-loading strong,
+.pvd-loading span {
+  display: block;
+}
+
+.pvd-loading strong {
+  color: #edf4fb;
+  font-size: 11.5px;
+  font-weight: 750;
+}
+
+.pvd-loading span {
+  margin-top: 4px;
+  color: var(--pvd-muted);
+  font-size: 9.5px;
+}
+
+@keyframes pvdspin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.pvd-quality-option,
+.pvd-audio-option {
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 13px;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.047);
+  background: transparent;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  cursor: pointer !important;
+  transition:
+    background 130ms ease,
+    transform 130ms ease;
+}
+
+.pvd-quality-option:hover,
+.pvd-audio-option:hover {
+  background:
+    linear-gradient(
+      90deg,
+      rgba(69, 168, 255, 0.1),
+      rgba(69, 168, 255, 0.035)
+    );
+}
+
+.pvd-option-left {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.pvd-option-icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  color: #91ccff;
+  background: rgba(69, 168, 255, 0.085);
+}
+
+.pvd-option-icon svg {
+  width: 17px;
+  height: 17px;
+  fill: currentColor;
+}
+
+.pvd-option-icon-audio {
+  color: #d69bff;
+  background: rgba(192, 124, 255, 0.09);
+}
+
+.pvd-option-copy {
+  min-width: 0;
+}
+
+.pvd-option-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.pvd-option-title b {
+  color: #f5f8fc;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.pvd-option-title em {
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(69, 168, 255, 0.13);
+  color: #79c5ff;
+  font-style: normal;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.pvd-option-title .pvd-mp3-badge {
+  background: rgba(192, 124, 255, 0.13);
+  color: #d9a4ff;
+}
+
+.pvd-option-copy small {
+  display: block;
+  margin-top: 4px;
+  color: var(--pvd-muted-2);
+  font-size: 9px;
+  font-weight: 560;
+}
+
+.pvd-option-action {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 9px;
+  color: #8190a4;
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.pvd-quality-option:hover .pvd-option-action,
+.pvd-audio-option:hover .pvd-option-action {
+  color: #c8e8ff;
+  border-color: rgba(69, 168, 255, 0.18);
+  background: rgba(69, 168, 255, 0.08);
+}
+
+.pvd-clean-note {
+  padding: 11px 13px 13px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  color: #68768a;
+  font-size: 8.5px;
+  line-height: 1.45;
+}
+
+.pvd-clean-check {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #72d5aa;
+  background: rgba(40, 200, 137, 0.09);
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.pvd-menu-error {
+  padding: 15px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.pvd-menu-error strong,
+.pvd-menu-error span {
+  display: block;
+}
+
+.pvd-menu-error strong {
+  color: #ffd8dd;
+  font-size: 11px;
+  font-weight: 780;
+}
+
+.pvd-menu-error span:not(.pvd-error-icon) {
+  margin-top: 4px;
+  color: #a98289;
+  font-size: 9.5px;
+  line-height: 1.45;
+}
+
+.pvd-error-icon {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  display: grid !important;
+  place-items: center;
+  border-radius: 8px;
+  color: #ff9aa6;
+  background: rgba(255, 112, 128, 0.1);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.pvd-menu-retry {
+  width: calc(100% - 26px);
+  margin: 0 13px 13px;
+  min-height: 36px;
+  border: 1px solid rgba(69, 168, 255, 0.17);
+  border-radius: 11px;
+  background: rgba(69, 168, 255, 0.07);
+  color: #8dceff;
+  font: 760 10.5px/1 inherit;
+  cursor: pointer;
+}
+
+.pvd-menu-retry:hover {
+  background: rgba(69, 168, 255, 0.12);
+}
+
+.pvd-toast {
+  position: fixed;
+  z-index: 2147483647;
+  right: 22px;
+  bottom: 22px;
+  max-width: min(420px, calc(100vw - 44px));
+  padding: 12px 15px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 14px;
+  color: #f4f7fb;
+  background: rgba(10, 14, 21, 0.965);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font: 650 12px/1.35
+    Inter,
+    ui-sans-serif,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transform: translateY(8px) scale(0.985);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+  pointer-events: none;
+}
+
+.pvd-toast-show {
+  opacity: 1;
+  transform: none;
+}
+
+.pvd-toast-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #7fa0bd;
+}
+
+.pvd-toast-success .pvd-toast-dot {
+  background: var(--pvd-green);
+  box-shadow: 0 0 0 4px rgba(40, 200, 137, 0.09);
+}
+
+.pvd-toast-error .pvd-toast-dot {
+  background: var(--pvd-danger);
+  box-shadow: 0 0 0 4px rgba(255, 112, 128, 0.09);
+}
+
+@media (max-width: 640px) {
+  .pvd-overlay-button {
+    min-height: 38px;
+    padding: 0 10px;
+    border-radius: 12px;
+  }
+
+  .pvd-button-label {
+    display: none;
+  }
+
+  .pvd-quality-menu {
+    top: 46px;
+    width: 278px;
+  }
+}

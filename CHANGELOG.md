@@ -1,5 +1,65 @@
 # Changelog
 
+## [1.3.3] - 2026-08-27
+
+### Fixed — Instagram Download Integrity
+- Fixed Instagram downloads producing an `instagram_video.mp4` file that Windows could not open.
+- Fixed cases that resulted in Windows media errors such as `0xC00D36C4` and `0xC00D36E5`.
+- Instagram playback URLs containing `bytestart`, `byteend`, or similar partial-range parameters are now normalized before download.
+- Added pre-download media validation for Instagram sources.
+- The extension now checks the HTTP response type and initial file bytes before saving an Instagram source as `.mp4`.
+- Invalid HTML/session/error responses are rejected instead of being saved with a video file extension.
+- Prioritized Instagram `video_versions` / progressive API media over lower-confidence observed player requests.
+- Filtered DASH initialization MP4s and audio-only DASH media from the standard Instagram video quality list.
+- Reduced duplicate unknown **Orijinal** quality entries.
+- Improved fallback filenames when Instagram post/story metadata is not immediately available.
+
+### Added — Instagram Story Images
+- Added download support for **image-based Instagram Stories**.
+- Large visible Story images now receive a dedicated **Görseli İndir** button.
+- Added support for Story image variants exposed through `image_versions2.candidates`.
+- Story image downloads are stored separately under:
+  - `Instagram-Stories/Images/`
+- Story video downloads remain under:
+  - `Instagram-Stories/Videos/`
+- Added basic image-source validation before saving Story images.
+
+### Improved — Instagram CDN Handling
+- Added Instagram CDN request-header rules to preserve an Instagram referer context for extension-initiated CDN requests.
+- Canonicalized Instagram CDN URLs before media caching and downloading.
+- Added source-priority metadata so API/Relay progressive sources outrank raw network observations.
+- Added content-type and file-signature checks for MP4, WebM, JPEG, PNG, and WebP.
+
+### UI / UX
+- Redesigned the floating **İndir** button with a cleaner compact glass/dark appearance.
+- Replaced text-only download symbols with SVG icons.
+- Redesigned the download menu with:
+  - clearer spacing,
+  - stronger typography hierarchy,
+  - platform badge,
+  - modern media icons,
+  - improved quality cards,
+  - cleaner **EN İYİ / BEST** badge,
+  - improved MP3 presentation,
+  - dedicated image-download menu state,
+  - improved loading animation,
+  - improved error/retry state.
+- Refined success/error toast notifications.
+
+### Preserved
+- X / Twitter download support.
+- Instagram feed/video post/Reels support.
+- Instagram Story video support.
+- Private-profile support through the user's already-authorized active browser session.
+- Local MP3 extraction.
+- Clipboard detection.
+- Native download notifications.
+- Tracker-free / analytics-free architecture.
+- Cross-browser WebExtensions support.
+
+### Notes
+v1.3.3 specifically addresses corrupted or non-media Instagram downloads. The extension now refuses to save a response as `.mp4` when it cannot verify that the response is actual video media.
+
 ## [1.3.2] - 2026-08-27
 
 ### Fixed
