@@ -1,0 +1,8 @@
+{
+  "name": "personal-social-video-downloader",
+  "private": true,
+  "version": "1.3.2",
+  "dependencies": {
+    "@breezystack/lamejs": "1.2.7"
+  }
+}

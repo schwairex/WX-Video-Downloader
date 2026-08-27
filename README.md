@@ -1,155 +1,70 @@
 # Personal X & Instagram Video Downloader
 
-> **Personal / experimental browser-extension project.**  
-> This repository is a small project I built for my own browser workflow and for learning WebExtension development. It is not an official X, Twitter, Meta, or Instagram product.
+> Personal / experimental project for my own browser workflow. No analytics, no remote download API, no tracking.
 
-A lightweight WebExtension that adds an **İndir / Download** button to videos on X and Instagram and, when possible, lets you choose from the detected video quality variants.
+## v1.3.2
 
-## v1.3.1
+This release rebuilds the interaction and media-cache path after the v1.3.x download regression. The download UI now handles clicks at the window capture layer, opens the quality panel immediately, re-scans page media on demand, and keeps a small short-lived per-tab media cache so Manifest V3 service-worker suspension does not erase all detected variants.
 
-v1.3.1 is a focused hotfix for the download regression introduced in v1.3.0.
+### Highlights
+- X / Twitter video downloads restored.
+- Instagram video/Reels downloads restored.
+- Instagram Story video support for stories already visible to the logged-in user.
+- Active-session support for private profiles the user can already view. The extension does not bypass access controls or request private content the account cannot access.
+- Raw/original media download: the extension does not add a platform watermark or UI overlay. Watermarks already embedded by the creator remain part of the source file.
+- Modern dark popup UI.
+- Clipboard URL detection when the popup is opened.
+- OS download-complete / interrupted notifications.
+- Tracker-free short-lived media cache.
+- Optional local MP3 audio extraction.
 
-- Fixed X / Twitter downloads not starting after selecting a quality.
-- Fixed Instagram downloads not starting after selecting a quality.
-- Fixed an internal JavaScript variable-name collision in `background.js`.
-- Separated the WebExtensions API object (`browserApi`) from the downloaded file extension (`fileExtension`).
-- Added an explicit downloads-API availability check.
-- Added clearer background download error logging for easier debugging.
-- Kept all v1.3.0 Instagram click fixes, quality selection, and cross-browser support.
+## Important: MP3 setup
+True MP3 encoding is not provided natively by all major browsers. To keep the extension private and avoid uploading media to an external conversion service, MP3 encoding is performed locally with `@breezystack/lamejs`.
 
-
-## Features
-
-### X / Twitter
-
-- Floating video download button.
-- Quality-selection menu before download.
-- Detected MP4/WebM variants.
-- Highest detected variant marked as **EN İYİ / BEST**.
-- Downloads saved under `Downloads/X-Videos/`.
-
-### Instagram
-
-- Instagram Home/feed video support.
-- Instagram video post support.
-- Instagram Reels support.
-- Quality picker when multiple variants are detected.
-- Independent overlay portal so Instagram profile/reel click layers do not steal the download-button click.
-- Downloads saved under `Downloads/Instagram-Videos/`.
+On Windows run once:
+```powershell
+.\setup-mp3.ps1
+```
+Then reload the extension. The script installs the encoder into `vendor/`; the extension never downloads executable code at runtime. The encoder is LGPL-3.0 and its license file is copied alongside it.
 
 ## Browser support
+The main code follows the WebExtensions API model. Chromium browsers use the MV3 service worker. Firefox/Safari may require manifest packaging adjustments for store distribution; local/source compatibility remains best-effort.
 
-The project now targets the common WebExtensions ecosystem rather than Brave only.
+## Instagram Stories and private profiles
+The extension only works with media the current browser session has already been authorized to view and load. It does not discover, unlock, or bypass private content. For Stories, open the Story normally; when its video is visible, the same floating download control appears.
 
-| Browser | Status | Local development installation |
-| --- | --- | --- |
-| Google Chrome | Supported | `chrome://extensions` → Developer mode → Load unpacked |
-| Brave | Supported | `brave://extensions` → Developer mode → Load unpacked |
-| Microsoft Edge | Supported | `edge://extensions` → Developer mode → Load unpacked |
-| Opera | Supported | Extensions page → Developer mode → Load unpacked |
-| Vivaldi | Supported | `vivaldi://extensions` → Developer mode → Load unpacked |
-| Firefox | Supported source/API path | `about:debugging#/runtime/this-firefox` → Load Temporary Add-on → select `manifest.json` |
-| Safari | WebExtension-compatible source | Safari requires its own Web Extension packaging/distribution step |
+## Clipboard behavior
+The popup reads the clipboard only when the extension popup is opened and only treats X/Twitter/Instagram media URLs as relevant. Unrelated clipboard text is ignored and is not uploaded anywhere.
 
-The same JavaScript/CSS source is used across these browsers. Browser stores and Safari use their own signing/package/distribution processes.
+## Privacy / performance
+- no analytics
+- no remote downloader API
+- no background clipboard polling
+- no cookie export
+- no private-profile bypass
+- short-lived tab media cache (12 minutes, capped)
+- media/audio processing only starts after user action
 
-## Why an overlay portal?
-
-Instagram places multiple clickable layers over media. On Home and Reels, a button inserted directly into the Instagram post/video DOM can visually appear above the video while the platform's own profile/post link still receives the click.
-
-Starting with v1.3.0, the extension:
-
-1. Detects each visible `<video>`.
-2. Creates the extension control under the page's top-level document instead of inside Instagram's link hierarchy.
-3. Positions that control over the video's top-right corner.
-4. Repositions it on scrolling, resizing, DOM virtualization, and Reels transitions.
-5. Captures the download interaction independently from Instagram's delegated click handlers.
-
-This keeps the same visual placement while separating the extension's click target from Instagram's own interactive layers.
-
-## Privacy approach
-
-- No custom download server.
-- No third-party video-download API.
-- No analytics.
-- No tracking code.
-- Detected media URLs are held temporarily in extension memory.
-- Downloads are started through the browser's WebExtensions downloads API.
-
-## Installation
-
-### Chromium browsers
-
-This covers Chrome, Brave, Edge, Opera, Vivaldi, and most Chromium-based desktop browsers.
-
-1. Download or clone this repository.
-2. Open your browser's extensions page.
-3. Enable **Developer mode**.
-4. Choose **Load unpacked**.
-5. Select the repository folder containing `manifest.json`.
-6. Reload open X and Instagram tabs.
-
-### Firefox
-
-For development/testing:
-
-1. Open `about:debugging#/runtime/this-firefox`.
-2. Choose **Load Temporary Add-on**.
-3. Select `manifest.json`.
-4. Reload X or Instagram.
-
-A permanently distributed Firefox extension normally goes through Firefox's signing/distribution process.
-
-### Safari
-
-The source is structured as a WebExtension-compatible project, but Safari does not use Chromium's normal “Load unpacked” workflow. Package/import the WebExtension using Apple's Safari Web Extension tooling for the Safari version you target.
-
-## Project structure
-
+## Files
 ```text
-personal-social-video-downloader/
-├── manifest.json
-├── background.js
-├── page-hook.js
-├── content.js
-├── content.css
-├── README.md
-├── CHANGELOG.md
-└── .gitignore
+manifest.json
+background.js
+page-hook.js
+content.js
+content.css
+popup.html
+popup.js
+popup.css
+audio.html
+audio.js
+icons/
+vendor/
+setup-mp3.ps1
+setup-mp3.sh
+CHANGELOG.md
 ```
 
-### `page-hook.js`
-
-Runs in the webpage's main JavaScript world and observes media-related page/network data exposed to the browser.
-
-### `content.js`
-
-Detects videos, creates the independent overlay portals, renders the quality picker, and communicates with the extension background context.
-
-### `background.js`
-
-Stores detected media variants temporarily per tab and starts the selected download.
-
-## Limitations
-
-This is a best-effort personal project. X and Instagram can change their frontend, media endpoints, or playback system at any time, so future site changes may require updates.
-
-The project is not intended for:
-
-- DRM bypassing,
-- access-control bypassing,
-- private-content circumvention,
-- mass/profile scraping,
-- bulk archival systems.
-
 ## Responsible use
+Only download media you have permission to save or use. Access to a post does not automatically grant redistribution rights.
 
-Use the extension only for content you are allowed to download, store, or use. Being able to view a video on a platform does not automatically grant permission to redistribute it.
-
-## Trademark / affiliation notice
-
-This project is not affiliated with, endorsed by, or sponsored by X Corp., Meta Platforms, Inc., or Instagram. Product and brand names belong to their respective owners.
-
----
-
-Built for my own browser workflow and learning.
+This project is not affiliated with X Corp., Meta Platforms, Inc., or Instagram.

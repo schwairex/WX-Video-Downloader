@@ -1,512 +1,212 @@
 const browserApi = globalThis.browser ?? globalThis.chrome;
 
-const tabMedia = new Map();
+const CACHE_TTL_MS = 12 * 60 * 1000;
+const MAX_MEDIA_PER_TAB = 160;
+const memoryMedia = new Map();
+const pendingPersist = new Map();
 
-const MAX_AGE_MS = 30 * 60 * 1000;
-const MAX_ITEMS_PER_TAB = 900;
-
+function cacheKey(tabId) { return `pvd_media_${tabId}`; }
 function platformFromUrl(url = "") {
-  const text = String(url);
-  if (
-    text.includes("video.twimg.com") ||
-    text.includes("x.com") ||
-    text.includes("twitter.com")
-  ) return "x";
-
-  if (
-    text.includes("instagram.com") ||
-    text.includes("cdninstagram.com") ||
-    text.includes("fbcdn.net")
-  ) return "instagram";
-
+  const s = String(url);
+  if (s.includes("video.twimg.com") || s.includes("x.com") || s.includes("twitter.com")) return "x";
+  if (s.includes("instagram.com") || s.includes("cdninstagram.com") || s.includes("fbcdn.net")) return "instagram";
   return null;
 }
-
 function isAllowedMediaUrl(url = "") {
   try {
-    const parsed = new URL(url);
-    const host = parsed.hostname.toLowerCase();
-
-    if (host === "video.twimg.com") return true;
-    if (host === "instagram.com" || host.endsWith(".instagram.com")) return true;
-    if (host === "cdninstagram.com" || host.endsWith(".cdninstagram.com")) return true;
-    if (host === "fbcdn.net" || host.endsWith(".fbcdn.net")) return true;
-
-    return false;
-  } catch (_) {
-    return false;
-  }
+    const host = new URL(url).hostname.toLowerCase();
+    return host === "video.twimg.com" || host === "instagram.com" || host.endsWith(".instagram.com") || host === "cdninstagram.com" || host.endsWith(".cdninstagram.com") || host === "fbcdn.net" || host.endsWith(".fbcdn.net");
+  } catch { return false; }
 }
-
 function twitterMediaKey(url = "") {
-  const match = String(url).match(
-    /\/(?:ext_tw_video(?:_thumb)?|amplify_video(?:_thumb)?|tweet_video(?:_thumb)?)\/(\d+)/i
-  );
-  return match ? match[1] : null;
+  const m = String(url).match(/\/(?:ext_tw_video(?:_thumb)?|amplify_video(?:_thumb)?|tweet_video(?:_thumb)?)\/(\d+)/i);
+  return m ? m[1] : null;
 }
-
-function getTabStore(tabId) {
-  if (!tabMedia.has(tabId)) tabMedia.set(tabId, []);
-  return tabMedia.get(tabId);
+function cleanStore(items) {
+  const cutoff = Date.now() - CACHE_TTL_MS;
+  const dedupe = new Map();
+  for (const item of Array.isArray(items) ? items : []) {
+    if (!item?.url || !isAllowedMediaUrl(item.url)) continue;
+    if ((item.seenAt || 0) < cutoff) continue;
+    const old = dedupe.get(item.url);
+    if (!old || (item.seenAt || 0) >= (old.seenAt || 0)) dedupe.set(item.url, item);
+  }
+  return [...dedupe.values()].sort((a,b)=>(a.seenAt||0)-(b.seenAt||0)).slice(-MAX_MEDIA_PER_TAB);
 }
-
 function normalizeVariant(item = {}) {
-  if (!item.url || typeof item.url !== "string") return null;
-  if (!isAllowedMediaUrl(item.url)) return null;
-
+  if (!item.url || typeof item.url !== "string" || !isAllowedMediaUrl(item.url)) return null;
   const platform = item.platform || platformFromUrl(item.url);
   if (!platform) return null;
-
   return {
-    url: item.url,
-    platform,
-    bitrate: Number(item.bitrate || 0),
-    contentType: item.contentType || item.content_type || "",
-    width: Number(item.width || 0),
-    height: Number(item.height || 0),
-    tweetId: item.tweetId ? String(item.tweetId) : null,
-    mediaKey: item.mediaKey || (platform === "x" ? twitterMediaKey(item.url) : null),
-    postKey: item.postKey ? String(item.postKey) : null,
-    seenAt: Date.now()
+    url:item.url, platform,
+    bitrate:Number(item.bitrate||0), contentType:item.contentType||item.content_type||"",
+    width:Number(item.width||0), height:Number(item.height||0),
+    tweetId:item.tweetId ? String(item.tweetId) : null,
+    mediaKey:item.mediaKey || (platform === "x" ? twitterMediaKey(item.url) : null),
+    postKey:item.postKey ? String(item.postKey) : null,
+    contentKind:item.contentKind || null,
+    seenAt:Date.now()
   };
 }
-
-function addMedia(tabId, item) {
-  if (typeof tabId !== "number" || tabId < 0) return;
-
-  const normalized = normalizeVariant(item);
-  if (!normalized) return;
-
-  const store = getTabStore(tabId);
-  const existing = store.find((x) => x.url === normalized.url);
-
-  if (existing) {
-    existing.seenAt = Date.now();
-    existing.bitrate = Math.max(existing.bitrate || 0, normalized.bitrate || 0);
-    existing.width = Math.max(existing.width || 0, normalized.width || 0);
-    existing.height = Math.max(existing.height || 0, normalized.height || 0);
-    existing.tweetId = existing.tweetId || normalized.tweetId;
-    existing.mediaKey = existing.mediaKey || normalized.mediaKey;
-    existing.postKey = existing.postKey || normalized.postKey;
-    existing.contentType = existing.contentType || normalized.contentType;
-    existing.platform = existing.platform || normalized.platform;
-  } else {
-    store.push(normalized);
-  }
-
-  const cutoff = Date.now() - MAX_AGE_MS;
-  const fresh = store.filter((x) => x.seenAt >= cutoff);
-  if (fresh.length > MAX_ITEMS_PER_TAB) {
-    fresh.splice(0, fresh.length - MAX_ITEMS_PER_TAB);
-  }
-  tabMedia.set(tabId, fresh);
+async function storageArea() {
+  return browserApi?.storage?.session ?? browserApi?.storage?.local ?? null;
 }
-
-function parseResolutionFromUrl(url = "") {
-  const xMatch = String(url).match(/\/(\d{2,5})x(\d{2,5})\//);
-  if (xMatch) {
-    const width = Number(xMatch[1]);
-    const height = Number(xMatch[2]);
-    return { width, height };
-  }
-
-  const queryMatch = String(url).match(/[?&](?:width|w)=(\d{2,5}).*?[?&](?:height|h)=(\d{2,5})/i);
-  if (queryMatch) {
-    return { width: Number(queryMatch[1]), height: Number(queryMatch[2]) };
-  }
-
-  return { width: 0, height: 0 };
-}
-
-function getResolution(item) {
-  if (item.width && item.height) {
-    return { width: item.width, height: item.height };
-  }
-  return parseResolutionFromUrl(item.url);
-}
-
-function isProgressiveVideo(item) {
-  const url = item?.url || "";
-  const contentType = (item?.contentType || "").toLowerCase();
-
-  if (/\.m3u8(?:\?|$)/i.test(url)) return false;
-  if (contentType.includes("mpegurl")) return false;
-
-  return (
-    /\.mp4(?:\?|$)/i.test(url) ||
-    /\.webm(?:\?|$)/i.test(url) ||
-    contentType.includes("video/mp4") ||
-    contentType.includes("video/webm") ||
-    (item.platform === "instagram" && isAllowedMediaUrl(url))
-  );
-}
-
-function variantScore(item) {
-  const { width, height } = getResolution(item);
-  const pixels = width * height;
-  const bitrate = Number(item.bitrate || 0);
-  const progressiveBonus = isProgressiveVideo(item) ? 10 ** 15 : 0;
-  return progressiveBonus + pixels * 1_000_000 + bitrate;
-}
-
-function sanitizePart(value, fallback) {
-  const cleaned = String(value || "")
-    .replace(/^@/, "")
-    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
-    .replace(/\s+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 90);
-
-  return cleaned || fallback;
-}
-
-function addDirectCandidate(candidates, payload) {
-  const directUrl = payload?.directUrl;
-  if (!directUrl || typeof directUrl !== "string") return;
-  if (directUrl.startsWith("blob:")) return;
-  if (!isAllowedMediaUrl(directUrl)) return;
-
-  const direct = normalizeVariant({
-    url: directUrl,
-    platform: payload.platform,
-    tweetId: payload.tweetId,
-    mediaKey: payload.mediaKey,
-    postKey: payload.postKey,
-    width: payload.width,
-    height: payload.height
-  });
-
-  if (direct) candidates.push(direct);
-}
-
-function chooseCandidates(store, payload) {
-  const platform = payload.platform;
-  const candidates = [];
-
-  addDirectCandidate(candidates, payload);
-
-  if (platform === "x") {
-    if (payload.mediaKey) {
-      candidates.push(
-        ...store.filter(
-          (x) => x.platform === "x" && x.mediaKey === String(payload.mediaKey)
-        )
-      );
-    }
-
-    if (payload.tweetId) {
-      candidates.push(
-        ...store.filter(
-          (x) => x.platform === "x" && x.tweetId === String(payload.tweetId)
-        )
-      );
-    }
-  }
-
-  if (platform === "instagram" && payload.postKey) {
-    candidates.push(
-      ...store.filter(
-        (x) =>
-          x.platform === "instagram" &&
-          x.postKey === String(payload.postKey)
-      )
-    );
-  }
-
-  if (!candidates.length) {
-    const recent = store.filter(
-      (x) =>
-        x.platform === platform &&
-        Date.now() - x.seenAt < 60_000
-    );
-
-    if (platform === "x") {
-      const families = new Set(recent.map((x) => x.mediaKey).filter(Boolean));
-      if (families.size === 1) candidates.push(...recent);
-    } else if (platform === "instagram") {
-      const posts = new Set(recent.map((x) => x.postKey).filter(Boolean));
-
-      // Individual Reel/Post page fallback.
-      if (payload.postKey && posts.size <= 1) {
-        candidates.push(...recent);
-      } else if (!payload.postKey && posts.size === 1) {
-        candidates.push(...recent);
-      }
-    }
-  }
-
-  const deduped = new Map();
-  for (const item of candidates.filter(Boolean)) {
-    if (!item.url) continue;
-    const previous = deduped.get(item.url);
-    if (!previous || variantScore(item) > variantScore(previous)) {
-      deduped.set(item.url, item);
-    }
-  }
-
-  return [...deduped.values()];
-}
-
-function qualityNumber(item) {
-  const { width, height } = getResolution(item);
-  if (!width || !height) return 0;
-  return Math.min(width, height);
-}
-
-function qualityLabel(item) {
-  const { width, height } = getResolution(item);
-  if (width && height) {
-    return `${Math.min(width, height)}p`;
-  }
-
-  if (item.bitrate) {
-    return `${Math.round(item.bitrate / 1000)} kbps`;
-  }
-
-  return "Orijinal";
-}
-
-function prepareMenuVariants(candidates) {
-  const progressive = candidates
-    .filter(isProgressiveVideo)
-    .sort((a, b) => variantScore(b) - variantScore(a));
-
-  // Same resolution can appear more than once. Keep the strongest variant.
-  const byQuality = new Map();
-  const unknown = [];
-
-  for (const item of progressive) {
-    const q = qualityNumber(item);
-    if (!q) {
-      unknown.push(item);
-      continue;
-    }
-
-    const previous = byQuality.get(q);
-    if (!previous || variantScore(item) > variantScore(previous)) {
-      byQuality.set(q, item);
-    }
-  }
-
-  const selected = [
-    ...[...byQuality.values()].sort((a, b) => variantScore(b) - variantScore(a)),
-    ...unknown.sort((a, b) => variantScore(b) - variantScore(a)).slice(0, byQuality.size ? 1 : 4)
-  ];
-
-  return selected.slice(0, 8).map((item, index) => {
-    const { width, height } = getResolution(item);
-    return {
-      url: item.url,
-      label: qualityLabel(item),
-      width,
-      height,
-      bitrate: item.bitrate || 0,
-      best: index === 0
-    };
-  });
-}
-
-async function getVariants(tabId, payload) {
-  const store = getTabStore(tabId);
-  const candidates = chooseCandidates(store, payload);
-  const variants = prepareMenuVariants(candidates);
-
-  if (!variants.length) {
-    const hlsFound = candidates.some((x) => /\.m3u8(?:\?|$)/i.test(x.url));
-    return {
-      ok: false,
-      code: hlsFound ? "STREAM_ONLY" : "NO_VIDEO",
-      message: payload.platform === "instagram"
-        ? "Instagram video kaynağı henüz yakalanmadı. Videoyu kısa süre oynatıp tekrar deneyin."
-        : hlsFound
-          ? "Şu anda yalnızca akış kaynağı yakalandı. Videoyu birkaç saniye oynatıp tekrar deneyin."
-          : "Video kaynağı henüz yakalanmadı. Videoyu bir kez oynatıp tekrar deneyin."
-    };
-  }
-
-  return { ok: true, variants };
-}
-
-async function downloadSelected(tabId, payload) {
-  const url = payload.selectedUrl;
-  if (!url || !isAllowedMediaUrl(url)) {
-    return { ok: false, message: "Geçersiz video adresi." };
-  }
-
-  const store = getTabStore(tabId);
-  const known = store.find((item) => item.url === url);
-  const item = known || normalizeVariant({
-    url,
-    platform: payload.platform,
-    tweetId: payload.tweetId,
-    postKey: payload.postKey,
-    mediaKey: payload.mediaKey
-  });
-
-  if (!item || !isProgressiveVideo(item)) {
-    return { ok: false, message: "Bu kaynak doğrudan indirilebilir video değil." };
-  }
-
-  const { width, height } = getResolution(item);
-  const quality = width && height ? `${width}x${height}` : qualityLabel(item);
-  const fileExtension = /\.webm(?:\?|$)/i.test(url) ? "webm" : "mp4";
-
-  const username = sanitizePart(payload.username, payload.platform === "instagram" ? "instagram" : "x_user");
-  const id = sanitizePart(
-    payload.platform === "instagram" ? payload.postKey : payload.tweetId,
-    "video"
-  );
-
-  const qualityPart = width && height
-    ? `_${width}x${height}`
-    : "";
-
-  const folder = payload.platform === "instagram"
-    ? "Instagram-Videos"
-    : "X-Videos";
-
-  const filename = `${folder}/${username}_${id}${qualityPart}.${fileExtension}`;
-
+async function hydrateTab(tabId) {
+  const memory = cleanStore(memoryMedia.get(tabId) || []);
+  const area = await storageArea();
+  if (!area?.get) { memoryMedia.set(tabId,memory); return memory; }
   try {
-    if (!browserApi?.downloads?.download) {
-      return {
-        ok: false,
-        code: "DOWNLOAD_API_UNAVAILABLE",
-        message: "Tarayıcının indirme API'sine erişilemiyor. Eklentiyi yeniden yükleyip tekrar deneyin."
-      };
-    }
-
-    const options = {
-      url,
-      filename,
-      saveAs: false
-    };
-
-    // Chromium/Firefox support conflictAction. Keep a fallback for browsers
-    // that implement a smaller subset of the downloads API.
-    let downloadId;
-    try {
-      downloadId = await browserApi.downloads.download({
-        ...options,
-        conflictAction: "uniquify"
-      });
-    } catch (firstError) {
-      downloadId = await browserApi.downloads.download(options);
-    }
-
-    return {
-      ok: true,
-      downloadId,
-      filename,
-      quality
-    };
-  } catch (error) {
-    console.error("[Personal Video Downloader] Download failed:", error);
-
-    return {
-      ok: false,
-      code: "DOWNLOAD_FAILED",
-      message: error?.message || "İndirme başlatılamadı."
-    };
+    const data = await area.get(cacheKey(tabId));
+    const merged = cleanStore([...memory, ...(data?.[cacheKey(tabId)] || [])]);
+    memoryMedia.set(tabId, merged);
+    return merged;
+  } catch { return memory; }
+}
+function schedulePersist(tabId) {
+  if (pendingPersist.has(tabId)) clearTimeout(pendingPersist.get(tabId));
+  pendingPersist.set(tabId, setTimeout(async()=>{
+    pendingPersist.delete(tabId);
+    const area = await storageArea();
+    if (!area?.set) return;
+    try { await area.set({[cacheKey(tabId)]: cleanStore(memoryMedia.get(tabId)||[])}); } catch {}
+  }, 180));
+}
+function addMedia(tabId,item) {
+  if (!Number.isInteger(tabId) || tabId < 0) return;
+  const n = normalizeVariant(item); if (!n) return;
+  const store = cleanStore(memoryMedia.get(tabId)||[]);
+  const existing = store.find(x=>x.url===n.url);
+  if (existing) Object.assign(existing, {
+    seenAt:Date.now(), bitrate:Math.max(existing.bitrate||0,n.bitrate||0),
+    width:Math.max(existing.width||0,n.width||0), height:Math.max(existing.height||0,n.height||0),
+    tweetId:existing.tweetId||n.tweetId, mediaKey:existing.mediaKey||n.mediaKey,
+    postKey:existing.postKey||n.postKey, contentKind:existing.contentKind||n.contentKind,
+    contentType:existing.contentType||n.contentType
+  }); else store.push(n);
+  memoryMedia.set(tabId, cleanStore(store));
+  schedulePersist(tabId);
+}
+function parseResolution(url="") {
+  const m = String(url).match(/\/(\d{2,5})x(\d{2,5})\//);
+  return m ? {width:Number(m[1]),height:Number(m[2])} : {width:0,height:0};
+}
+function resolution(item) { return item.width&&item.height ? {width:item.width,height:item.height} : parseResolution(item.url); }
+function isProgressive(item) {
+  const url=item?.url||"", ct=(item?.contentType||"").toLowerCase();
+  if (/\.m3u8(?:\?|$)/i.test(url) || ct.includes("mpegurl")) return false;
+  return /\.(mp4|webm)(?:\?|$)/i.test(url) || ct.includes("video/mp4") || ct.includes("video/webm") || item.platform === "instagram";
+}
+function score(item) { const {width,height}=resolution(item); return (isProgressive(item)?1e15:0)+(width*height*1e6)+Number(item.bitrate||0); }
+function sanitize(v,fallback) { const x=String(v||"").replace(/^@/,"").replace(/[<>:\"/\\|?*\x00-\x1F]/g,"_").replace(/\s+/g,"_").slice(0,90); return x||fallback; }
+function chooseCandidates(store,p) {
+  const out=[];
+  if (p.directUrl && !String(p.directUrl).startsWith("blob:") && isAllowedMediaUrl(p.directUrl)) out.push(normalizeVariant({...p,url:p.directUrl}));
+  if (p.platform === "x") {
+    if (p.mediaKey) out.push(...store.filter(x=>x.platform==="x"&&x.mediaKey===String(p.mediaKey)));
+    if (p.tweetId) out.push(...store.filter(x=>x.platform==="x"&&x.tweetId===String(p.tweetId)));
+  } else if (p.platform === "instagram") {
+    if (p.postKey) out.push(...store.filter(x=>x.platform==="instagram"&&x.postKey===String(p.postKey)));
+  }
+  if (!out.filter(Boolean).length) {
+    const recent=store.filter(x=>x.platform===p.platform && Date.now()-(x.seenAt||0)<20000);
+    out.push(...recent.slice(-24));
+  }
+  const d=new Map(); for (const i of out.filter(Boolean)) { const old=d.get(i.url); if(!old||score(i)>score(old)) d.set(i.url,i); }
+  return [...d.values()];
+}
+function qualityLabel(item) { const {width,height}=resolution(item); return width&&height ? `${Math.min(width,height)}p` : item.bitrate ? `${Math.round(item.bitrate/1000)} kbps` : "Orijinal"; }
+function menuVariants(candidates) {
+  const sorted=candidates.filter(isProgressive).sort((a,b)=>score(b)-score(a));
+  const byQ=new Map(), unknown=[];
+  for(const i of sorted){ const {width,height}=resolution(i), q=width&&height?Math.min(width,height):0; if(!q) unknown.push(i); else if(!byQ.has(q)) byQ.set(q,i); }
+  const selected=[...byQ.values(), ...unknown.slice(0,byQ.size?1:4)].slice(0,8);
+  return selected.map((i,index)=>{const r=resolution(i);return {url:i.url,label:qualityLabel(i),width:r.width,height:r.height,bitrate:i.bitrate||0,best:index===0,cleanSource:true};});
+}
+async function getVariants(tabId,payload){
+  const store=await hydrateTab(tabId); const candidates=chooseCandidates(store,payload); const variants=menuVariants(candidates);
+  if(!variants.length) return {ok:false,code:"NO_VIDEO",message:"Video kaynağı henüz yakalanmadı. Videoyu kısa süre oynatıp Tekrar Dene seçeneğine bas."};
+  return {ok:true,variants};
+}
+async function notificationsEnabled(){
+  try { const d=await browserApi.storage.local.get("pvd_settings"); return d?.pvd_settings?.notifications !== false; } catch { return true; }
+}
+async function notify(title,message){
+  if(!browserApi?.notifications?.create || !(await notificationsEnabled())) return;
+  try { await browserApi.notifications.create({type:"basic",iconUrl:"icons/icon128.png",title,message}); } catch {}
+}
+async function downloadSelected(tabId,payload){
+  const url=payload.selectedUrl;
+  if(!url||!isAllowedMediaUrl(url)) return {ok:false,message:"Geçersiz video adresi."};
+  const store=await hydrateTab(tabId); const item=store.find(x=>x.url===url)||normalizeVariant({...payload,url});
+  if(!item||!isProgressive(item)) return {ok:false,message:"Doğrudan indirilebilir video kaynağı bulunamadı."};
+  const {width,height}=resolution(item), quality=width&&height?`${width}x${height}`:qualityLabel(item);
+  const fileExtension=/\.webm(?:\?|$)/i.test(url)?"webm":"mp4";
+  const username=sanitize(payload.username,payload.platform==="instagram"?"instagram":"x_user");
+  const id=sanitize(payload.platform==="instagram"?payload.postKey:payload.tweetId,"video");
+  const qp=width&&height?`_${width}x${height}`:"";
+  let folder=payload.platform==="instagram"?"Instagram-Videos":"X-Videos";
+  if(payload.platform==="instagram" && payload.contentKind==="story") folder="Instagram-Stories";
+  const filename=`${folder}/${username}_${id}${qp}.${fileExtension}`;
+  try {
+    if(!browserApi?.downloads?.download) return {ok:false,message:"Tarayıcının indirme API'si kullanılamıyor."};
+    const downloadId=await browserApi.downloads.download({url,filename,saveAs:false,conflictAction:"uniquify"});
+    return {ok:true,downloadId,filename,quality};
+  } catch(error){
+    console.error("[PVD] download failed",error); await notify("İndirme başlatılamadı",error?.message||"Ağ veya tarayıcı kaynaklı bir hata oluştu.");
+    return {ok:false,message:error?.message||"İndirme başlatılamadı."};
   }
 }
-
-browserApi.webRequest.onBeforeRequest.addListener(
-  (details) => {
-    if (details.tabId < 0) return;
-
-    const url = details.url || "";
-    const platform = platformFromUrl(url);
-    if (!platform) return;
-
-    if (platform === "x") {
-      if (
-        url.startsWith("https://video.twimg.com/") &&
-        (
-          /\.mp4(?:\?|$)/i.test(url) ||
-          /\.webm(?:\?|$)/i.test(url) ||
-          /\.m3u8(?:\?|$)/i.test(url)
-        )
-      ) {
-        addMedia(details.tabId, { url, platform: "x" });
-      }
-      return;
-    }
-
-    if (platform === "instagram") {
-      if (
-        (
-          url.includes("cdninstagram.com") ||
-          url.includes("fbcdn.net")
-        ) &&
-        (
-          /\.mp4(?:\?|$)/i.test(url) ||
-          url.includes("/v/t16/") ||
-          url.includes("/o1/v/")
-        )
-      ) {
-        addMedia(details.tabId, {
-          url,
-          platform: "instagram",
-          contentType: "video/mp4"
-        });
-      }
-    }
-  },
-  {
-    urls: [
-      "https://video.twimg.com/*",
-      "https://*.cdninstagram.com/*",
-      "https://*.fbcdn.net/*"
-    ]
-  }
-);
-
-browserApi.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  const tabId = sender.tab?.id;
-
-  if (message?.type === "CACHE_VARIANTS") {
-    if (typeof tabId === "number" && Array.isArray(message.variants)) {
-      for (const variant of message.variants) addMedia(tabId, variant);
-    }
-    sendResponse({ ok: true });
-    return;
-  }
-
-  if (message?.type === "GET_VARIANTS") {
-    if (typeof tabId !== "number") {
-      sendResponse({ ok: false, message: "Aktif sekme bulunamadı." });
-      return;
-    }
-
-    getVariants(tabId, message)
-      .then(sendResponse)
-      .catch((error) => sendResponse({
-        ok: false,
-        message: error?.message || "Kalite seçenekleri alınamadı."
-      }));
-
+async function ensureOffscreen(){
+  if(!browserApi?.offscreen?.createDocument) return false;
+  try {
+    if(browserApi.offscreen.hasDocument && await browserApi.offscreen.hasDocument()) return true;
+    await browserApi.offscreen.createDocument({url:"audio.html",reasons:["AUDIO_PLAYBACK"],justification:"Convert a user-selected accessible video audio track locally."});
     return true;
-  }
+  } catch(e){ if(String(e).includes("single offscreen")) return true; return false; }
+}
+async function extractAudio(tabId,payload){
+  const store=await hydrateTab(tabId); const candidates=chooseCandidates(store,payload).filter(isProgressive).sort((a,b)=>score(b)-score(a));
+  const source=candidates[0]; if(!source) return {ok:false,message:"Ses çıkarılacak video kaynağı bulunamadı."};
+  const filenameBase=`Audio/${sanitize(payload.username,"media")}_${sanitize(payload.platform==="instagram"?payload.postKey:payload.tweetId,"audio")}`;
+  const offscreen=await ensureOffscreen();
+  if(!offscreen) return {ok:false,code:"AUDIO_ENGINE_UNAVAILABLE",message:"Bu tarayıcıda yerel ses dönüştürme motoru kullanılamıyor."};
+  try {
+    const converted = await browserApi.runtime.sendMessage({type:"AUDIO_PROCESS",url:source.url,filenameBase});
+    if (!converted?.ok) return converted || {ok:false,message:"MP3 oluşturulamadı."};
+    if (!converted.blobUrl) return {ok:false,message:"MP3 çıktısı oluşturulamadı."};
+    const downloadId = await browserApi.downloads.download({
+      url: converted.blobUrl,
+      filename: `${filenameBase}.mp3`,
+      saveAs: false,
+      conflictAction: "uniquify"
+    });
+    return {ok:true,downloadId,message:"MP3 oluşturuldu ve indirme başladı."};
+  } catch(error){ return {ok:false,message:error?.message||"Ses çıkarma işlemi başlatılamadı."}; }
+}
 
-  if (message?.type === "DOWNLOAD_SELECTED") {
-    if (typeof tabId !== "number") {
-      sendResponse({ ok: false, message: "Aktif sekme bulunamadı." });
-      return;
-    }
+browserApi.webRequest.onBeforeRequest.addListener(details=>{
+  if(details.tabId<0) return; const url=details.url||""; const platform=platformFromUrl(url); if(!platform) return;
+  if(platform==="x" && url.startsWith("https://video.twimg.com/") && (/\.(mp4|webm)(?:\?|$)/i.test(url)||/\.m3u8(?:\?|$)/i.test(url))) addMedia(details.tabId,{url,platform:"x"});
+  if(platform==="instagram" && (url.includes("cdninstagram.com")||url.includes("fbcdn.net")) && (/\.mp4(?:\?|$)/i.test(url)||url.includes("/v/t16/")||url.includes("/o1/v/"))) addMedia(details.tabId,{url,platform:"instagram",contentType:"video/mp4"});
+},{urls:["https://video.twimg.com/*","https://*.cdninstagram.com/*","https://*.fbcdn.net/*"]});
 
-    downloadSelected(tabId, message)
-      .then(sendResponse)
-      .catch((error) => sendResponse({
-        ok: false,
-        message: error?.message || "Video indirilemedi."
-      }));
-
-    return true;
-  }
+browserApi.runtime.onMessage.addListener((message,sender,sendResponse)=>{
+  const tabId=sender.tab?.id ?? message?.tabId;
+  if(message?.type==="CACHE_VARIANTS") { if(Number.isInteger(tabId)&&Array.isArray(message.variants)) for(const v of message.variants) addMedia(tabId,v); sendResponse({ok:true}); return; }
+  if(message?.type==="GET_VARIANTS") { if(!Number.isInteger(tabId)){sendResponse({ok:false,message:"Aktif sekme bulunamadı."});return;} getVariants(tabId,message).then(sendResponse); return true; }
+  if(message?.type==="DOWNLOAD_SELECTED") { if(!Number.isInteger(tabId)){sendResponse({ok:false,message:"Aktif sekme bulunamadı."});return;} downloadSelected(tabId,message).then(sendResponse); return true; }
+  if(message?.type==="EXTRACT_AUDIO") { if(!Number.isInteger(tabId)){sendResponse({ok:false,message:"Aktif sekme bulunamadı."});return;} extractAudio(tabId,message).then(sendResponse); return true; }
+  if(message?.type==="OPEN_URL") { browserApi.tabs.create({url:message.url}).then(()=>sendResponse({ok:true})).catch(e=>sendResponse({ok:false,message:e.message})); return true; }
+  if(message?.type==="GET_ACTIVE_TAB") { browserApi.tabs.query({active:true,currentWindow:true}).then(t=>sendResponse({ok:true,tab:t[0]||null})).catch(e=>sendResponse({ok:false,message:e.message})); return true; }
 });
 
-browserApi.tabs?.onRemoved?.addListener((tabId) => {
-  tabMedia.delete(tabId);
+browserApi.tabs?.onRemoved?.addListener(async tabId=>{
+  memoryMedia.delete(tabId); const area=await storageArea(); try{await area?.remove?.(cacheKey(tabId));}catch{}
+});
+
+browserApi.downloads?.onChanged?.addListener(async delta=>{
+  if(!delta?.state?.current) return;
+  if(delta.state.current==="complete") {
+    try { const items=await browserApi.downloads.search({id:delta.id}); const name=(items?.[0]?.filename||"").split(/[\\/]/).pop()||"Dosya"; await notify("İndirme tamamlandı",name); } catch { await notify("İndirme tamamlandı","Dosya başarıyla kaydedildi."); }
+  } else if(delta.state.current==="interrupted") await notify("İndirme kesildi","Ağ veya tarayıcı kaynaklı bir hata nedeniyle indirme tamamlanamadı.");
 });
