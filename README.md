@@ -1,6 +1,6 @@
 <div align="center">
 
-# Personal X & Instagram Video Downloader
+# WX Video Downloader
 
 **A lightweight, privacy-focused WebExtension built for my own browser workflow.**
 
