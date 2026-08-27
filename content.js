@@ -14,12 +14,179 @@
     "pvd-quality-menu";
 
   const entries = new Map();
+  const localVariants = new Map();
   let frameQueued = false;
 
-  const sleep = (ms) =>
-    new Promise((resolve) =>
-      setTimeout(resolve, ms)
+  function localVariantKey(item) {
+    return `${item.mediaType || "video"}|${item.url || ""}`;
+  }
+
+  function cacheLocalVariants(variants = []) {
+    const now = Date.now();
+
+    for (const raw of variants) {
+      if (!raw?.url) continue;
+      localVariants.set(localVariantKey(raw), {
+        ...raw,
+        seenAt: raw.seenAt || now
+      });
+    }
+
+    for (const [key, item] of localVariants) {
+      if (now - (item.seenAt || 0) > 12 * 60 * 1000) {
+        localVariants.delete(key);
+      }
+    }
+
+    while (localVariants.size > 220) {
+      localVariants.delete(localVariants.keys().next().value);
+    }
+  }
+
+  function localResolution(item) {
+    if (item.width && item.height) {
+      return { width: Number(item.width), height: Number(item.height) };
+    }
+
+    const match = String(item.url || "").match(/\/(\d{2,5})x(\d{2,5})\//);
+    return match
+      ? { width: Number(match[1]), height: Number(match[2]) }
+      : { width: 0, height: 0 };
+  }
+
+  function localLooksLikeVideo(item) {
+    if (item.mediaType === "image") return false;
+
+    const url = String(item.url || "").toLowerCase();
+    const type = String(item.contentType || "").toLowerCase();
+
+    if (url.includes(".m3u8")) return false;
+    if (url.includes("dashinit") || url.includes("_video_dashinit.mp4")) return false;
+
+    return (
+      item.mediaType === "video" ||
+      type.startsWith("video/") ||
+      /\.(?:mp4|webm)(?:\?|$)/i.test(url)
     );
+  }
+
+  function localLooksLikeImage(item) {
+    const url = String(item.url || "").toLowerCase();
+    const type = String(item.contentType || "").toLowerCase();
+
+    return (
+      item.mediaType === "image" ||
+      type.startsWith("image/") ||
+      /\.(?:jpe?g|png|webp|avif)(?:\?|$)/i.test(url)
+    );
+  }
+
+  function instantResponse(element) {
+    const data = requestData(element);
+    const wantedType = data.mediaType === "image" ? "image" : "video";
+    const now = Date.now();
+
+    let items = [...localVariants.values()].filter((item) => {
+      if (now - (item.seenAt || 0) > 12 * 60 * 1000) return false;
+      if (item.platform !== data.platform) return false;
+
+      if (wantedType === "image" && !localLooksLikeImage(item)) return false;
+      if (wantedType === "video" && !localLooksLikeVideo(item)) return false;
+
+      if (data.platform === "x") {
+        if (data.mediaKey && item.mediaKey) {
+          return String(item.mediaKey) === String(data.mediaKey);
+        }
+        if (data.tweetId && item.tweetId) {
+          return String(item.tweetId) === String(data.tweetId);
+        }
+      }
+
+      if (data.platform === "instagram" && data.postKey && item.postKey) {
+        return String(item.postKey) === String(data.postKey);
+      }
+
+      return now - (item.seenAt || 0) < 20000;
+    });
+
+    if (
+      data.directUrl &&
+      /^https?:/i.test(data.directUrl) &&
+      !data.directUrl.startsWith("blob:")
+    ) {
+      items.unshift({
+        url: data.directUrl,
+        platform: data.platform,
+        mediaType: wantedType,
+        contentType: wantedType === "image" ? "image/jpeg" : "video/mp4",
+        source: "dom",
+        sourcePriority: 75,
+        seenAt: now
+      });
+    }
+
+    const deduped = new Map();
+    for (const item of items) {
+      if (!item?.url) continue;
+      if (!deduped.has(item.url)) deduped.set(item.url, item);
+    }
+
+    const sorted = [...deduped.values()].sort((a, b) => {
+      const ar = localResolution(a);
+      const br = localResolution(b);
+      const ap = ar.width * ar.height;
+      const bp = br.width * br.height;
+      return (
+        (Number(b.sourcePriority || 0) - Number(a.sourcePriority || 0)) ||
+        (bp - ap) ||
+        (Number(b.bitrate || 0) - Number(a.bitrate || 0))
+      );
+    });
+
+    const qualityMap = new Map();
+    const unknown = [];
+
+    for (const item of sorted) {
+      const { width, height } = localResolution(item);
+      if (width && height) {
+        const q = `${Math.min(width, height)}:${width}x${height}`;
+        if (!qualityMap.has(q)) qualityMap.set(q, item);
+      } else {
+        unknown.push(item);
+      }
+    }
+
+    const selected = [
+      ...qualityMap.values(),
+      ...unknown.slice(0, qualityMap.size ? 0 : 1)
+    ].slice(0, 8);
+
+    if (!selected.length) return null;
+
+    return {
+      ok: true,
+      mediaType: wantedType,
+      variants: selected.map((item, index) => {
+        const { width, height } = localResolution(item);
+        return {
+          url: item.url,
+          label:
+            width && height
+              ? `${Math.min(width, height)}p`
+              : wantedType === "image"
+                ? "Orijinal Görsel"
+                : "Orijinal",
+          width,
+          height,
+          bitrate: Number(item.bitrate || 0),
+          best: index === 0,
+          cleanSource: true,
+          mediaType: wantedType,
+          source: item.source || "local"
+        };
+      })
+    };
+  }
 
   async function send(message) {
     if (
@@ -589,9 +756,9 @@
           <span class="pvd-option-copy">
             <span class="pvd-option-title">
               <b>Sadece Ses</b>
-              <em class="pvd-mp3-badge">MP3</em>
+              <em class="pvd-mp3-badge">AUDIO</em>
             </span>
-            <small>Yerel dönüştürme • 192 kbps</small>
+            <small>Kurulumsuz • AAC / WAV fallback</small>
           </span>
         </span>
         <span class="pvd-option-action">♪</span>
@@ -616,26 +783,18 @@
     body.appendChild(note);
   }
 
-  async function openMenu(
-    element,
-    button,
-    portal
-  ) {
-    const existing =
-      portal.querySelector(
-        `.${MENU}`
-      );
+  function renderInstantUnavailable(menu, element) {
+    errorMenu(
+      menu,
+      mediaType(element) === "image"
+        ? "Görsel kaynağı henüz sayfaya yüklenmedi."
+        : "Video kaynağı henüz sayfaya yüklenmedi.",
+      element
+    );
+  }
 
-    if (existing) {
-      existing.remove();
-      return;
-    }
-
-    const menu =
-      menuShell(
-        portal,
-        element
-      );
+  async function refreshEntry(entry) {
+    if (!entry?.element?.isConnected) return null;
 
     window.postMessage(
       {
@@ -645,60 +804,71 @@
       "*"
     );
 
-    await sleep(150);
-
-    let response;
-
     try {
-      response = await send({
+      const response = await send({
         type: "GET_VARIANTS",
-        ...requestData(element)
+        ...requestData(entry.element)
       });
 
-      if (!response?.ok) {
-        await sleep(500);
-
-        window.postMessage(
-          {
-            source: SOURCE,
-            type: "RESCAN_REQUEST"
-          },
-          "*"
-        );
-
-        response = await send({
-          type: "GET_VARIANTS",
-          ...requestData(element)
-        });
+      if (response?.ok) {
+        entry.preloaded = response;
       }
 
-      if (!menu.isConnected) return;
-
-      if (!response?.ok) {
-        errorMenu(
-          menu,
-          response?.message ||
-            "Medya kaynağı bulunamadı.",
-          element
-        );
-      } else {
-        renderOptions(
-          menu,
-          element,
-          button,
-          response
-        );
-      }
-    } catch (error) {
-      if (menu.isConnected) {
-        errorMenu(
-          menu,
-          error?.message ||
-            "Medya seçenekleri alınamadı.",
-          element
-        );
-      }
+      return response;
+    } catch (_) {
+      return null;
     }
+  }
+
+  function prewarmEntry(entry) {
+    if (!entry || entry.prewarmStarted) return;
+    entry.prewarmStarted = true;
+
+    // Give page-hook a chance to repost its in-page cache, but do not block UI.
+    queueMicrotask(() => {
+      refreshEntry(entry).finally(() => {
+        entry.prewarmStarted = false;
+      });
+    });
+  }
+
+  async function openMenu(
+    element,
+    button,
+    portal
+  ) {
+    const existing = portal.querySelector(`.${MENU}`);
+
+    if (existing) {
+      existing.remove();
+      return;
+    }
+
+    // Menu shell is created immediately; there is no artificial 150/500 ms wait.
+    const menu = menuShell(portal, element);
+    const entry = entries.get(element);
+
+    // Priority 1: already-prewarmed background response.
+    // Priority 2: content-script cache populated directly by page-hook.
+    const immediate =
+      entry?.preloaded?.ok
+        ? entry.preloaded
+        : instantResponse(element);
+
+    if (immediate?.ok) {
+      renderOptions(menu, element, button, immediate);
+    } else {
+      // Never leave the user staring at "Kaynak hazırlanıyor".
+      renderInstantUnavailable(menu, element);
+    }
+
+    // Refresh in background. If a source appears a moment later, update the
+    // already-open menu automatically without blocking the first paint.
+    const refreshed = await refreshEntry(entry || { element });
+
+    if (!menu.isConnected || !refreshed?.ok) return;
+
+    renderOptions(menu, element, button, refreshed);
   }
 
   async function download(
@@ -844,11 +1014,16 @@
     document.documentElement
       .appendChild(portal);
 
-    entries.set(element, {
+    const entry = {
       element,
       portal,
-      button
-    });
+      button,
+      preloaded: null,
+      prewarmStarted: false
+    };
+
+    entries.set(element, entry);
+    prewarmEntry(entry);
   }
 
   function position() {
@@ -956,6 +1131,7 @@
       }
 
       makePortal(video);
+      prewarmEntry(entries.get(video));
     }
 
     if (
@@ -970,6 +1146,7 @@
           isLikelyStoryImage(image)
         ) {
           makePortal(image);
+          prewarmEntry(entries.get(image));
         }
       }
     }
@@ -1123,6 +1300,8 @@
         return;
       }
 
+      cacheLocalVariants(event.data.variants);
+
       Promise.resolve(
         send({
           type: "CACHE_VARIANTS",
@@ -1130,6 +1309,15 @@
             event.data.variants
         })
       ).catch(() => {});
+
+      for (const entry of entries.values()) {
+        if (visible(entry.element)) {
+          const instant = instantResponse(entry.element);
+          if (instant?.ok) {
+            entry.preloaded = instant;
+          }
+        }
+      }
     }
   );
 

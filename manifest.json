@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Personal X & Instagram Video Downloader",
-  "version": "1.3.3",
-  "description": "Personal privacy-focused WebExtension for downloading accessible X and Instagram videos, Reels, Stories and Story images.",
+  "version": "1.4.0",
+  "description": "Personal privacy-focused WebExtension for instant X and Instagram media downloads, Stories and zero-setup audio-only export.",
   "permissions": [
     "downloads",
     "webRequest",
@@ -73,7 +73,6 @@
       "resources": [
         "audio.html",
         "audio.js",
-        "vendor/lamejs.iife.js",
         "icons/icon128.png"
       ],
       "matches": [

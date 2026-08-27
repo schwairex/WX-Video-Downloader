@@ -1,13 +1,17 @@
 # Third-party notices
 
-## @breezystack/lamejs 1.2.7
+## Runtime dependencies
 
-The optional local MP3 feature uses `@breezystack/lamejs` 1.2.7, a JavaScript MP3 encoder distributed under **LGPL-3.0**.
+v1.4.0 does **not** require an external runtime downloader, analytics library,
+MP3 encoder package, remote conversion API, or setup-time npm dependency.
 
-The project does not fetch this code at extension runtime. The included setup script installs the published package locally and copies the encoder plus its license into `vendor/`.
+The previous optional `@breezystack/lamejs` setup has been removed from the
+distributed extension. Audio-only export now uses browser-native WebCodecs AAC
+when available and a built-in PCM WAV encoder as the compatibility fallback.
 
-Upstream project: `github.com/shijinyu/lamejs`
-Original lamejs project: `github.com/zhuker/lamejs`
-LAME project: `lame.sourceforge.io`
+## README badges
 
-If you distribute a build containing the encoder, preserve the LGPL notice and license terms.
+The GitHub README uses badge images served by **Shields.io** for presentation
+only. Shields.io is not loaded or contacted by the installed browser extension.
+
+Shields.io project: `https://github.com/badges/shields`

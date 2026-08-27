@@ -516,18 +516,24 @@ function menuVariants(candidates, requestedMediaType = "video") {
 }
 
 async function getVariants(tabId, payload) {
-  const store = await hydrateTab(tabId);
-  const candidates = chooseCandidates(store, payload);
-
   const requestedMediaType =
     payload.mediaType === "image"
       ? "image"
       : "video";
 
-  const variants = menuVariants(
-    candidates,
-    requestedMediaType
-  );
+  // v1.4.0: hot path is memory-first. MEDIA_VARIANTS messages populate
+  // memory immediately; storage hydration is only used when memory has no
+  // usable source. This removes the extension-storage round trip from the
+  // normal quality-menu path.
+  const memoryStore = cleanStore(memoryMedia.get(tabId) || []);
+  let candidates = chooseCandidates(memoryStore, payload);
+  let variants = menuVariants(candidates, requestedMediaType);
+
+  if (!variants.length) {
+    const hydratedStore = await hydrateTab(tabId);
+    candidates = chooseCandidates(hydratedStore, payload);
+    variants = menuVariants(candidates, requestedMediaType);
+  }
 
   if (!variants.length) {
     return {
@@ -538,8 +544,8 @@ async function getVariants(tabId, payload) {
           : "NO_VIDEO",
       message:
         requestedMediaType === "image"
-          ? "Hikâye görseli henüz yakalanmadı. Hikâyeyi açık tutup Tekrar Dene seçeneğine bas."
-          : "Video kaynağı henüz yakalanmadı. Videoyu kısa süre oynatıp Tekrar Dene seçeneğine bas."
+          ? "Hikâye görseli henüz yakalanmadı."
+          : "Video kaynağı henüz yakalanmadı."
     };
   }
 
@@ -1039,7 +1045,7 @@ async function extractAudio(tabId, payload) {
     if (!converted?.ok) {
       return converted || {
         ok: false,
-        message: "MP3 oluşturulamadı."
+        message: "Ses dosyası oluşturulamadı."
       };
     }
 
@@ -1047,14 +1053,19 @@ async function extractAudio(tabId, payload) {
       return {
         ok: false,
         message:
-          "MP3 çıktısı oluşturulamadı."
+          "Ses çıktısı oluşturulamadı."
       };
     }
+
+    const extension =
+      converted.extension === "aac"
+        ? "aac"
+        : "wav";
 
     const downloadId =
       await browserApi.downloads.download({
         url: converted.blobUrl,
-        filename: `${filenameBase}.mp3`,
+        filename: `${filenameBase}.${extension}`,
         saveAs: false,
         conflictAction: "uniquify"
       });
@@ -1062,8 +1073,9 @@ async function extractAudio(tabId, payload) {
     return {
       ok: true,
       downloadId,
+      audioFormat: converted.format || extension.toUpperCase(),
       message:
-        "MP3 oluşturuldu ve indirme başladı."
+        `${converted.format || extension.toUpperCase()} ses dosyası oluşturuldu ve indirme başladı.`
     };
   } catch (error) {
     return {

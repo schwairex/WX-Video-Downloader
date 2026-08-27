@@ -1,5 +1,92 @@
 # Changelog
 
+## [1.4.0] - 2026-08-27
+
+### Fixed — Instant Quality Menu
+- Removed the intentional `150 ms` and `500 ms` waits from the download-menu flow.
+- Fixed X / Twitter downloads showing **Kaynak hazırlanıyor** before the quality list.
+- Fixed Instagram downloads showing the same unnecessary preparation state.
+- Added a content-script-side media variant cache so detected quality options do not require a background/storage round trip when the user clicks **İndir**.
+- Added automatic prewarming for visible media controls.
+- Visible X and Instagram media now request/cache quality data before user interaction.
+- Changed background `GET_VARIANTS` handling to use the in-memory cache first and storage hydration only as a fallback.
+- The menu now paints immediately.
+- When the website genuinely has not loaded any media source yet, the menu shows an immediate retry/error state instead of an indefinite loading screen.
+- Background refreshes can update an already-open menu without blocking its first render.
+
+### Changed — Zero-Setup Audio Export
+- Removed the post-install `setup-mp3.ps1` / `setup-mp3.sh` requirement.
+- Removed the placeholder/optional MP3 encoder dependency from the distributed extension.
+- Removed the **“MP3 encoder modülü kurulu değil”** runtime error.
+- Audio-only export now works directly after installing the extension.
+- Added browser-native **AAC/ADTS 192 kbps** export through WebCodecs when supported.
+- Added a built-in **lossless WAV** fallback when native AAC encoding is unavailable.
+- Audio processing remains local to the browser.
+- No remote audio conversion API is used.
+- No npm install is required for end users.
+- Updated the in-page audio option from a hard-coded MP3 promise to a browser-compatible **AUDIO** action.
+
+### Performance
+- Added a bounded local quality cache inside `content.js`.
+- Quality variants are associated with visible media before the download menu is opened.
+- Preserved the existing short-lived background cache while making it secondary to the instant content-side path.
+- Kept all caching local and bounded to avoid continuous RAM growth.
+- No new polling-heavy background process was introduced.
+
+### README / GitHub
+- Completely redesigned `README.md`.
+- Added Shields.io badges for:
+  - version,
+  - Manifest V3,
+  - privacy/tracker-free status,
+  - supported social platforms,
+  - browser compatibility,
+  - audio export,
+  - project status,
+  - runtime dependency status.
+- Added a detailed feature overview.
+- Added full installation instructions for Chromium browsers, Firefox, and Safari WebExtension packaging.
+- Added usage guides for:
+  - video downloads,
+  - Instagram Story images,
+  - audio-only export,
+  - clipboard detection.
+- Added a browser-support table.
+- Added a supported-content table.
+- Added a permissions explanation.
+- Added architecture documentation.
+- Added project-file documentation.
+- Added troubleshooting guidance.
+- Expanded privacy, responsible-use, private-profile, and watermark behavior documentation.
+
+### Removed
+- Removed `setup-mp3.ps1`.
+- Removed `setup-mp3.sh`.
+- Removed the optional `vendor/lamejs.iife.js` placeholder/runtime setup workflow.
+- Removed the npm runtime dependency on `@breezystack/lamejs`.
+- Removed the requirement for users to install anything after loading the extension.
+
+### Preserved
+- X / Twitter video downloads.
+- Instagram feed/video-post/Reels downloads.
+- Instagram Story video downloads.
+- Instagram Story image downloads.
+- Instagram media-integrity validation.
+- Already-authorized private-profile media support.
+- Clipboard URL detection.
+- Native download notifications.
+- Modern dark UI.
+- Tracker-free / analytics-free architecture.
+- Cross-browser WebExtensions codebase.
+
+### Notes
+v1.4.0 is a usability and performance release. The main goal is that a user can
+load the extension and immediately use both the quality menu and audio-only
+export without an additional setup step.
+
+Audio-only files are exported as AAC where native browser support is available,
+with WAV as the automatic compatibility fallback.
+
 ## [1.3.3] - 2026-08-27
 
 ### Fixed — Instagram Download Integrity
